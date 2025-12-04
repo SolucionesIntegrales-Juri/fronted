@@ -1,81 +1,218 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ReportCard from '../components/ReportCard';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import '../styles/Reports.css';
-import type { ReportStats, MonthlyData, ReportType } from '../types/report';
+import { generarPagosExcel, generarUsoVehiculosExcel, generarIngresosMensualesExcel } from '../services/reporteService';
+import { datosIngresosMensuales } from '../services/reporteService';
+import { clienteService } from '../services/clienteService';
+import { vehiculoService } from '../services/vehiculoService';
+import { contratoService } from '../services/contratoService';
+import { activityService } from '../services/activityService';
+import type { ReportType } from '../types/report';
+
+interface RealReport extends ReportType {
+  kind: 'pagos' | 'uso-vehiculos' | 'ingresos-mensuales';
+  endpointExcel: string;
+  needsYear?: boolean;
+}
 
 const Reports: React.FC = () => {
-  const [selectedPeriod, setSelectedPeriod] = useState('ultimo-mes');
+  const [year, setYear] = useState<number>(new Date().getFullYear());
+  const [periodo, setPeriodo] = useState<'mensual' | 'trimestral' | 'semestral' | 'anual'>('mensual');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [clientsCount, setClientsCount] = useState<number>(0);
+  const [vehiclesTotal, setVehiclesTotal] = useState<number>(0);
+  const [activeContracts, setActiveContracts] = useState<number>(0);
+  const [monthlyIncome, setMonthlyIncome] = useState<number>(0);
+  const [ingresosMensuales, setIngresosMensuales] = useState<Array<{ mes: string; total: number }>>([]);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type?: 'warning' | 'danger' | 'info' | 'success';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
-  const stats: ReportStats = {
-    monthlyIncome: 45230,
-    incomeChange: '+15%',
-    activeContracts: 34,
-    contractsChange: '+8%',
-    averageOccupancy: 78,
-    occupancyChange: '+5%',
-    newClients: 12,
-    clientsChange: '+12%',
-  };
-
-  const monthlyIncomeData: MonthlyData[] = [
-    { month: 'Ene', income: 35000, contracts: 28 },
-    { month: 'Feb', income: 38000, contracts: 32 },
-    { month: 'Mar', income: 45230, contracts: 34 },
-  ];
-
-  const reports: ReportType[] = [
+  const reports: RealReport[] = [
     {
-      id: '1',
-      title: 'Reporte de Ingresos',
-      description: 'Análisis detallado de ingresos por período',
+      id: 'pagos',
+      kind: 'pagos',
+      title: 'Reporte de Pagos',
+      description: 'Pagos realizados en el período seleccionado.',
       icon: '💰',
-      lastGenerated: '2024-03-08',
-      period: 'último mes',
+      endpointExcel: '/pagos/excel',
+      lastGenerated: '-',
+      period: 'seleccionado'
     },
     {
-      id: '2',
-      title: 'Reporte de Vehículos',
-      description: 'Estado y utilización de la flota',
+      id: 'uso-vehiculos',
+      kind: 'uso-vehiculos',
+      title: 'Reporte de Uso de Vehículos',
+      description: 'Uso y actividad de la flota en el período.',
       icon: '🚗',
-      lastGenerated: '2024-03-07',
-      period: 'último mes',
+      endpointExcel: '/uso-vehiculos/excel',
+      lastGenerated: '-',
+      period: 'seleccionado'
     },
     {
-      id: '3',
-      title: 'Reporte de Clientes',
-      description: 'Análisis de comportamiento de clientes',
-      icon: '👥',
-      lastGenerated: '2024-03-06',
-      period: 'último mes',
-    },
-    {
-      id: '4',
-      title: 'Reporte de Contratos',
-      description: 'Estadísticas de contratos y alquileres',
-      icon: '📄',
-      lastGenerated: '2024-03-05',
-      period: 'último mes',
-    },
+      id: 'ingresos-mensuales',
+      kind: 'ingresos-mensuales',
+      title: 'Reporte de Ingresos Mensuales',
+      description: 'Resumen de ingresos por mes para el año indicado.',
+      icon: '📈',
+      endpointExcel: `/ingresos-mensuales/${year}/excel`,
+      needsYear: true,
+      lastGenerated: '-',
+      period: 'año actual'
+    }
   ];
 
-  const handleDownload = (reportId: string) => {
-    console.log('Descargar reporte:', reportId);
+  const periodoFechas = () => {
+    const ahora = new Date();
+    const añoActual = ahora.getFullYear();
+    let inicio: Date;
+    const fin: Date = new Date(ahora);
+    switch (periodo) {
+      case 'mensual': inicio = new Date(añoActual, ahora.getMonth(), 1); break;
+      case 'trimestral': inicio = new Date(añoActual, ahora.getMonth() - 2, 1); break;
+      case 'semestral': inicio = new Date(añoActual, ahora.getMonth() - 5, 1); break;
+      case 'anual': default: inicio = new Date(añoActual, 0, 1); break;
+    }
+    return { inicio: inicio.toISOString().substring(0, 10), fin: fin.toISOString().substring(0, 10) };
   };
 
-  const handleGenerate = (reportId: string) => {
-    console.log('Generar reporte:', reportId);
+  // Cargar métricas y datos para gráficos
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [clientes, vehiculos, contratos] = await Promise.all([
+          clienteService.findAll().catch(() => []),
+          vehiculoService.findAll().catch(() => []),
+          contratoService.findAll().catch(() => []),
+        ]);
+        type ClienteLike = { activo?: boolean };
+        const clientesArr: ClienteLike[] = Array.isArray(clientes) ? (clientes as unknown as ClienteLike[]) : [];
+        setClientsCount(clientesArr.filter((c) => c?.activo !== false).length);
+        const totalVeh = Array.isArray(vehiculos) ? vehiculos.length : 0;
+        setVehiclesTotal(totalVeh);
+
+        // Contratos activos por fecha
+        const today = new Date();
+        const clamp = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        type ContratoLike = { estado?: string; fechaInicio?: string | Date; fechaFin?: string | Date; detalles?: Array<{ precioDiario?: number }> };
+        const contratosArr: ContratoLike[] = Array.isArray(contratos) ? (contratos as unknown as ContratoLike[]) : [];
+        const activos = contratosArr.filter((c) => {
+          const estado = (c?.estado ?? '').toString().toUpperCase();
+          if (estado === 'FINALIZADO' || estado === 'CANCELADO') return false;
+          const fin = new Date(c?.fechaFin || Date.now());
+          return clamp(fin) >= clamp(today);
+        }).length;
+        setActiveContracts(activos);
+
+        // Ingresos del mes (prorrateado similar al Dashboard)
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        const clampDate = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const daysBetweenInclusive = (a: Date, b: Date) => Math.max(0, Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+        const ingreso = contratosArr.reduce((acc: number, c: ContratoLike) => {
+          const start = clampDate(new Date(c?.fechaInicio || Date.now()));
+          const end = clampDate(new Date(c?.fechaFin || Date.now()));
+          const startOverlap = start < monthStart ? monthStart : start;
+          const endOverlap = end > monthEnd ? monthEnd : end;
+          if (endOverlap < monthStart || startOverlap > monthEnd) return acc;
+          const days = daysBetweenInclusive(startOverlap, endOverlap);
+          const precioDiario = Number(c?.detalles?.[0]?.precioDiario || 0);
+          // Se agrega el IGV (18%) para coincidir con el total del contrato
+          return acc + (days * precioDiario * 1.18);
+        }, 0);
+        setMonthlyIncome(ingreso);
+      } catch {
+        // dejar valores por defecto
+      }
+    };
+    load();
+  }, []);
+
+  // Datos para el gráfico de ingresos mensuales según año seleccionado
+  useEffect(() => {
+    datosIngresosMensuales(year)
+      .then((rows: unknown[]) => {
+        type IngresoRow = { mes?: string; month?: string | number; nombreMes?: string; total?: number; totalIngresos?: number; monto?: number };
+        const parsed = (rows || []).map((ru: unknown) => {
+          const r = ru as IngresoRow;
+          const mes = r?.mes ?? r?.nombreMes ?? (typeof r?.month === 'number' ? String(r?.month) : r?.month) ?? '';
+          const total = Number(r?.total ?? r?.totalIngresos ?? r?.monto ?? 0);
+          return { mes: String(mes), total };
+        });
+        setIngresosMensuales(parsed);
+      })
+      .catch(() => setIngresosMensuales([]));
+  }, [year]);
+
+  const handleDownload = async (r: RealReport) => {
+    try {
+      setDownloadingId(r.id);
+      if (r.kind === 'pagos' || r.kind === 'uso-vehiculos') {
+        const { inicio, fin } = periodoFechas();
+        if (r.kind === 'pagos') {
+          await generarPagosExcel(inicio, fin);
+          activityService.log(`Descargaste reporte de Pagos (${inicio} a ${fin})`);
+        } else {
+          await generarUsoVehiculosExcel(inicio, fin);
+          activityService.log(`Descargaste reporte de Uso de Vehículos (${inicio} a ${fin})`);
+        }
+      } else if (r.kind === 'ingresos-mensuales') {
+        await generarIngresosMensualesExcel(year);
+        activityService.log(`Descargaste reporte de Ingresos Mensuales (${year})`);
+      }
+    } catch (e) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Error',
+        message: (e as Error).message || 'Error al descargar',
+        type: 'danger',
+        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+      });
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
-  const handleGenerateAll = () => {
-    console.log('Generar todos los reportes');
+  const handleGenerate = async (r: RealReport) => {
+    try {
+      setGeneratingId(r.id);
+      await handleDownload(r); // reutiliza misma lógica
+    } catch (e) {
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Error',
+        message: (e as Error).message || 'Error al generar',
+        type: 'danger',
+        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+      });
+    } finally {
+      setGeneratingId(null);
+    }
   };
 
-  const getMaxValue = (data: MonthlyData[], key: 'income' | 'contracts') => {
-    return Math.max(...data.map(item => item[key]));
-  };
-
-  const getBarHeight = (value: number, maxValue: number) => {
-    return `${(value / maxValue) * 100}%`;
+  const handleGenerateAll = async () => {
+    for (const r of reports) {
+      await handleGenerate(r);
+    }
+    activityService.log('Generaste todos los reportes para el período seleccionado');
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Éxito',
+      message: 'Generación masiva completada',
+      type: 'success',
+      onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+    });
   };
 
   return (
@@ -87,139 +224,120 @@ const Reports: React.FC = () => {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats superiors */}
       <div className="reports-stats">
         <div className="stat-card-report">
           <div className="stat-label">Ingresos Este Mes</div>
-          <div className="stat-value">S/. {stats.monthlyIncome.toLocaleString()}</div>
-          <div className="stat-change positive">
-            <span className="change-arrow">↗</span>
-            <span>{stats.incomeChange}</span>
-          </div>
+          <div className="stat-value">S/. {monthlyIncome.toLocaleString()}</div>
+          <div className="stat-change positive"><span className="change-arrow">↗</span><span className="change-text">+15%</span></div>
         </div>
-
         <div className="stat-card-report">
           <div className="stat-label">Contratos Activos</div>
-          <div className="stat-value">{stats.activeContracts}</div>
-          <div className="stat-change positive">
-            <span className="change-arrow">↗</span>
-            <span>{stats.contractsChange}</span>
-          </div>
+          <div className="stat-value">{activeContracts}</div>
+          <div className="stat-change positive"><span className="change-arrow">↗</span><span className="change-text">+8%</span></div>
         </div>
-
         <div className="stat-card-report">
           <div className="stat-label">Ocupación Promedio</div>
-          <div className="stat-value">{stats.averageOccupancy}%</div>
-          <div className="stat-change positive">
-            <span className="change-arrow">↗</span>
-            <span>{stats.occupancyChange}</span>
-          </div>
+          <div className="stat-value">{vehiclesTotal ? Math.round((activeContracts / Math.max(vehiclesTotal,1)) * 100) : 0}%</div>
+          <div className="stat-change positive"><span className="change-arrow">↗</span><span className="change-text">+5%</span></div>
         </div>
-
         <div className="stat-card-report">
           <div className="stat-label">Clientes Nuevos</div>
-          <div className="stat-value">{stats.newClients}</div>
-          <div className="stat-change positive">
-            <span className="change-arrow">↗</span>
-            <span>{stats.clientsChange}</span>
-          </div>
+          <div className="stat-value">{clientsCount}</div>
+          <div className="stat-change positive"><span className="change-arrow">↗</span><span className="change-text">+12%</span></div>
         </div>
       </div>
 
-      {/* Charts Section */}
+      {/* Charts */}
       <div className="charts-section">
         <div className="chart-card">
-          <h3 className="chart-title">
-            <span className="chart-icon">📊</span>
-            Ingresos Mensuales
-          </h3>
+          <h3 className="chart-title"><span className="chart-icon">📊</span>Ingresos Mensuales</h3>
           <div className="chart-container">
-            {monthlyIncomeData.map((data) => (
-              <div key={data.month} className="chart-bar-wrapper">
-                <div className="chart-bar-container">
-                  <div 
-                    className="chart-bar income-bar"
-                    style={{ height: getBarHeight(data.income, getMaxValue(monthlyIncomeData, 'income')) }}
-                  ></div>
+            {(ingresosMensuales.length ? ingresosMensuales : [
+              { mes: 'Ene', total: 0 }, { mes: 'Feb', total: 0 }, { mes: 'Mar', total: 0 }
+            ]).slice(0, 12).map((row, idx) => {
+              const max = Math.max(1, ...ingresosMensuales.map(r => r.total));
+              const h = Math.max(10, Math.round((row.total / max) * 140));
+              return (
+                <div className="chart-bar-wrapper" key={idx}>
+                  <div className="chart-bar-container">
+                    <div className="chart-bar income-bar" style={{ height: `${h}px` }} />
+                  </div>
+                  <div className="chart-value">S/. {Math.round(row.total).toLocaleString()}</div>
+                  <div className="chart-label">{row.mes}</div>
                 </div>
-                <div className="chart-value">S/. {data.income.toLocaleString()}</div>
-                <div className="chart-label">{data.month}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
-
         <div className="chart-card">
-          <h3 className="chart-title">
-            <span className="chart-icon">📄</span>
-            Contratos por Mes
-          </h3>
+          <h3 className="chart-title"><span className="chart-icon">📄</span>Contratos por Mes</h3>
           <div className="chart-container">
-            {monthlyIncomeData.map((data) => (
-              <div key={data.month} className="chart-bar-wrapper">
+            {[{ label: 'Ene', v: 28 }, { label: 'Feb', v: 32 }, { label: 'Mar', v: 34 }].map((c, idx) => (
+              <div className="chart-bar-wrapper" key={idx}>
                 <div className="chart-bar-container">
-                  <div 
-                    className="chart-bar contracts-bar"
-                    style={{ height: getBarHeight(data.contracts, getMaxValue(monthlyIncomeData, 'contracts')) }}
-                  ></div>
+                  <div className="chart-bar contracts-bar" style={{ height: `${20 + c.v}px` }} />
                 </div>
-                <div className="chart-value">{data.contracts} contratos</div>
-                <div className="chart-label">{data.month}</div>
+                <div className="chart-value">{c.v} contratos</div>
+                <div className="chart-label">{c.label}</div>
               </div>
             ))}
           </div>
         </div>
       </div>
-
-      {/* Period Configuration */}
-      <div className="period-config-section">
-        <h3 className="section-title">
-          <span className="section-icon">📅</span>
-          Configuración de Período
-        </h3>
+      <div className="report-filters period-config-section">
+        <h3 className="section-title"><span className="section-icon">🗓</span>Configuración de Período</h3>
         <p className="section-subtitle">Selecciona el período de tiempo que se aplicará a todos los reportes</p>
-        
-        <div className="period-selector">
-          <label className="period-label">Período de Análisis</label>
-          <select 
-            className="period-select"
-            value={selectedPeriod}
-            onChange={(e) => setSelectedPeriod(e.target.value)}
-          >
-            <option value="ultimo-mes">Último mes</option>
-            <option value="ultimos-3-meses">Últimos 3 meses</option>
-            <option value="ultimos-6-meses">Últimos 6 meses</option>
-            <option value="ultimo-ano">Último año</option>
-            <option value="personalizado">Personalizado</option>
+        <label>
+          <span className="period-label">Período de Análisis</span>
+          <select className="period-select" value={periodo} onChange={(e) => setPeriodo(e.target.value as typeof periodo)}>
+            <option value="mensual">Mensual</option>
+            <option value="trimestral">Trimestral</option>
+            <option value="semestral">Semestral</option>
+            <option value="anual">Anual</option>
           </select>
-          <span className="period-info">
-            <span className="info-icon">📅</span>
-            Aplicará a: último mes
-          </span>
-        </div>
-      </div>
-
-      {/* Generate Reports Section */}
-      <div className="generate-reports-section">
-        <h3 className="section-title">Generar Reportes</h3>
-        <p className="section-subtitle">Todos los reportes se generarán con el período seleccionado arriba</p>
-        
-        <div className="reports-grid">
-          {reports.map((report) => (
-            <ReportCard
-              key={report.id}
-              report={report}
-              onDownload={() => handleDownload(report.id)}
-              onGenerate={() => handleGenerate(report.id)}
-            />
-          ))}
-        </div>
-
-        <button className="btn-generate-all" onClick={handleGenerateAll}>
+        </label>
+        <label>
+          Año ingresos mensuales:
+          <input
+            type="number"
+            value={year}
+            onChange={(e) => setYear(parseInt(e.target.value) || new Date().getFullYear())}
+            min={2000}
+            max={2100}
+          />
+        </label>
+        <div className="period-info"><span className="info-icon">📅</span>Aplicará a: {periodo.replace('-', ' ')}</div>
+        <button className="btn-generate-all" onClick={handleGenerateAll} disabled={!!generatingId || !!downloadingId}>
           <span className="btn-icon">📊</span>
           Generar Todos los Reportes - Último mes
         </button>
       </div>
+      <div className="generate-reports-section">
+        <h3 className="section-title">Generar Reportes</h3>
+        <p className="section-subtitle">Todos los reportes se generarán con el período seleccionado arriba</p>
+        <div className="reports-grid">
+        {reports.map(r => (
+          <ReportCard
+            key={r.id}
+            report={r}
+            onDownload={() => handleDownload(r)}
+            onGenerate={() => handleGenerate(r)}
+            downloading={downloadingId === r.id}
+            generating={generatingId === r.id}
+          />
+        ))}
+        </div>
+      </div>
+      
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

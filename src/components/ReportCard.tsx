@@ -4,11 +4,13 @@ import type { ReportType } from '../types/report';
 
 interface ReportCardProps {
   report: ReportType;
-  onDownload: () => void;
-  onGenerate: () => void;
+  onDownload?: (r: ReportType) => Promise<void> | void;
+  onGenerate?: (r: ReportType) => Promise<void> | void;
+  downloading?: boolean;
+  generating?: boolean;
 }
 
-const ReportCard: React.FC<ReportCardProps> = ({ report, onDownload, onGenerate }) => {
+const ReportCard: React.FC<ReportCardProps> = ({ report, onDownload, onGenerate, downloading, generating }) => {
   return (
     <div className="report-card">
       <div className="report-card-content">
@@ -18,21 +20,19 @@ const ReportCard: React.FC<ReportCardProps> = ({ report, onDownload, onGenerate 
         <div className="report-info">
           <h3 className="report-title">{report.title}</h3>
           <p className="report-description">{report.description}</p>
-          <div className="report-meta">
-            <span className="report-meta-item">Último generado: {report.lastGenerated}</span>
-            <span className="report-meta-item">Período: {report.period}</span>
-          </div>
         </div>
       </div>
       <div className="report-actions">
-        <button className="btn-download" onClick={onDownload}>
-          <span className="btn-icon">📥</span>
-          Descargar
-        </button>
-        <button className="btn-generate" onClick={onGenerate}>
-          <span className="btn-icon">📊</span>
-          Generar
-        </button>
+        {onDownload && (
+          <button className="btn-primary" onClick={() => onDownload(report)} disabled={!!downloading || !!generating}>
+            {downloading ? 'Descargando…' : 'Descargar Excel'}
+          </button>
+        )}
+        {onGenerate && (
+          <button className="btn-secondary" onClick={() => onGenerate(report)} disabled={!!downloading || !!generating}>
+            {generating ? 'Generando…' : 'Generar'}
+          </button>
+        )}
       </div>
     </div>
   );

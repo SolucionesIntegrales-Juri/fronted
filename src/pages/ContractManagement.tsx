@@ -1,35 +1,93 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import ContractCard from '../components/ContractCard';
 import ContractDetailsModal from '../components/ContractDetailsModal';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import '../styles/ContractManagement.css';
-import type { Contract, ContractStats } from '../types/contract';
+import type { ContratoResponseDto, ContractStats } from '../types/contract';
+import { contratoService } from '../services/contratoService';
 
 interface ContractManagementProps {
   onNavigate?: (menuId: string) => void;
-  contracts?: Contract[];
+  contracts?: ContratoResponseDto[];
   onDeleteContract?: (id: string) => void;
-  onStartEditContract?: (contract: Contract) => void;
+  onStartEditContract?: (contract: ContratoResponseDto) => void;
 }
 
-const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, contracts = [], onDeleteContract, onStartEditContract }) => {
+const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, contracts, onDeleteContract, onStartEditContract }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
+  const [selectedContract, setSelectedContract] = useState<ContratoResponseDto | null>(null);
+  const [items, setItems] = useState<ContratoResponseDto[]>(Array.isArray(contracts) ? contracts : []);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type?: 'warning' | 'danger' | 'info' | 'success';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  const location = useLocation();
+
+  // Si nos pasan contratos por props, sincronizamos una sola vez o cuando cambie realmente el array
+  useEffect(() => {
+    if (Array.isArray(contracts)) setItems(contracts);
+  }, [contracts]);
+
+  // Cargar siempre al montar para asegurar datos frescos desde el backend
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await contratoService.findAll();
+        if (!cancelled) {
+          setItems(Array.isArray(data) ? data : []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const errorMsg = err instanceof Error ? err.message : 'Error desconocido al cargar contratos';
+          setError(errorMsg);
+          console.error('Error cargando contratos:', err);
+          // Mantener los contratos existentes en caso de error
+          // No limpiar items para que se mantengan los datos previos
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    // Solo cargar si no hay props de contratos
+    if (!contracts || contracts.length === 0) {
+      load();
+    }
+    return () => { cancelled = true; };
+  }, [contracts, location.key]);
 
   // Cálculo de estadísticas dinámicas según contratos recibidos
   const stats: ContractStats = useMemo(() => {
-    const total = contracts.length;
+    const total = items.length;
     const today = new Date();
     const clamp = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const active = contracts.filter(c => c.status === 'Activo' && clamp(new Date(c.endDate)) >= clamp(today)).length;
+    const active = items.filter(c => (
+      (c.estado?.toUpperCase?.() !== 'FINALIZADO' && c.estado?.toUpperCase?.() !== 'CANCELADO') &&
+      clamp(new Date(c.fechaFin)) >= clamp(today)
+    )).length;
 
     // Por vencer: estado 'Por Vencer' o fin dentro de 30 días
     const now = new Date();
     const in30 = new Date(now);
     in30.setDate(in30.getDate() + 30);
-    const expiring = contracts.filter(c => {
-      if (c.status === 'Por Vencer') return true;
-      const end = new Date(c.endDate);
-      return end >= now && end <= in30 && (c.status === 'Activo' || c.status === 'Pendiente');
+    const expiring = items.filter(c => {
+      const end = new Date(c.fechaFin);
+      const est = (c.estado || '').toUpperCase();
+      return end >= now && end <= in30 && est !== 'FINALIZADO' && est !== 'CANCELADO';
     }).length;
 
     // Ingresos del mes actual (prorrateado por días dentro del mes)
@@ -39,36 +97,78 @@ const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, con
     const clampDate = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
     const daysBetweenInclusive = (a: Date, b: Date) => Math.max(0, Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
-    const monthlyIncome = contracts.reduce((acc, c) => {
-      const start = clampDate(new Date(c.startDate));
-      const end = clampDate(new Date(c.endDate));
+    const monthlyIncome = items.reduce((acc, c) => {
+      const start = clampDate(new Date(c.fechaInicio));
+      const end = clampDate(new Date(c.fechaFin));
       const startOverlap = start < monthStart ? monthStart : start;
       const endOverlap = end > monthEnd ? monthEnd : end;
       if (endOverlap < monthStart || startOverlap > monthEnd) return acc;
       const days = daysBetweenInclusive(startOverlap, endOverlap);
-      return acc + days * (c.dailyRate || 0);
+      const precioDiario = c.detalles?.[0]?.precioDiario || 0;
+      // Se agrega el IGV (18%) para coincidir con el total del contrato
+      return acc + (days * precioDiario * 1.18);
     }, 0);
 
     return { total, active, expiring, monthlyIncome };
-  }, [contracts]);
+  }, [items]);
 
   // La lista de contratos proviene de la prop `contracts` (por defecto vacía)
   
 
-  const filteredContracts = contracts.filter(contract =>
-    contract.contractNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    contract.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    contract.vehicle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    contract.vehiclePlate.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredContracts = items.filter(contract => {
+    const t = (searchTerm || '').toLowerCase();
+    const codigo = (contract.codigoContrato || '').toLowerCase();
+    const clienteNombre = (contract.cliente?.nombre || '').toLowerCase();
+    const veh = `${contract.detalles?.[0]?.marcaVehiculo || ''} ${contract.detalles?.[0]?.modeloVehiculo || ''} ${contract.detalles?.[0]?.placaVehiculo || ''}`.toLowerCase();
+    return codigo.includes(t) || clienteNombre.includes(t) || veh.includes(t);
+  });
 
   const handleNewContract = () => {
     onNavigate?.('crear-contrato');
   };
 
-  const handleViewDetails = (contract: Contract) => setSelectedContract(contract);
-  const handleDelete = (id: string) => onDeleteContract?.(id);
-  const handleEdit = (contract: Contract) => onStartEditContract?.(contract);
+  const handleViewDetails = (contract: ContratoResponseDto) => setSelectedContract(contract);
+  
+  const handleDelete = (id: string) => {
+    const contract = items.find(c => c.id === id);
+    const contractCode = contract?.codigoContrato || 'este contrato';
+    
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Eliminar contrato',
+      message: `¿Eliminar el contrato ${contractCode}?`,
+      type: 'danger',
+      onConfirm: () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        if (onDeleteContract) {
+          onDeleteContract(id);
+        } else {
+          contratoService.delete(id)
+            .then(() => {
+              setItems(prev => prev.filter(c => c.id !== id));
+              setConfirmDialog({
+                isOpen: true,
+                title: 'Éxito',
+                message: 'Contrato eliminado correctamente',
+                type: 'success',
+                onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+              });
+            })
+            .catch(err => {
+              setConfirmDialog({
+                isOpen: true,
+                title: 'Error',
+                message: err?.message || 'No se pudo eliminar el contrato',
+                type: 'danger',
+                onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+              });
+            });
+        }
+      },
+    });
+  };
+  
+  const handleEdit = (contract: ContratoResponseDto) => onStartEditContract?.(contract);
 
   const handleFilters = () => {
     console.log('Abrir filtros');
@@ -173,8 +273,50 @@ const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, con
           <button className="btn-filters" onClick={handleStateFilter}>
             Estado
           </button>
+          <button className="btn-filters" onClick={async () => {
+            try {
+              setLoading(true);
+              setError(null);
+              const data = await contratoService.findAll();
+              setItems(Array.isArray(data) ? data : []);
+            } catch (err) {
+              const errorMsg = err instanceof Error ? err.message : 'Error al recargar contratos';
+              setError(errorMsg);
+              console.error('Error recargando contratos:', err);
+            } finally {
+              setLoading(false);
+            }
+          }}>
+            Refrescar
+          </button>
         </div>
 
+        {loading && <div className="no-results"><p>Cargando contratos…</p></div>}
+        {error && !loading && (
+          <div className="no-results">
+            <p style={{ color: 'crimson' }}>{error}</p>
+            <button 
+              className="btn-primary" 
+              style={{ marginTop: '1rem' }}
+              onClick={async () => {
+                try {
+                  setLoading(true);
+                  setError(null);
+                  const data = await contratoService.findAll();
+                  setItems(Array.isArray(data) ? data : []);
+                } catch (err) {
+                  const errorMsg = err instanceof Error ? err.message : 'Error al recargar contratos';
+                  setError(errorMsg);
+                  console.error('Error recargando contratos:', err);
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            >
+              Reintentar
+            </button>
+          </div>
+        )}
         <div className="contracts-list">
           {filteredContracts.map((contract) => (
             <ContractCard
@@ -187,7 +329,7 @@ const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, con
           ))}
         </div>
 
-        {filteredContracts.length === 0 && (
+        {filteredContracts.length === 0 && !loading && !error && (
           <div className="no-results">
             <p>No se encontraron contratos que coincidan con la búsqueda</p>
           </div>
@@ -201,6 +343,15 @@ const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, con
           onDelete={(id) => { handleDelete(id); setSelectedContract(null); }}
         />
       )}
+      
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

@@ -1,43 +1,70 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import '../styles/CreateContract.css';
-import type { Contract } from '../types/contract';
-import type { Client } from '../types/client';
-import type { Vehicle } from '../types/vehicle';
+import type { ContratoRequestDto, ContratoResponseDto, DetalleContratoDto } from '../types/contract';
+import type { ClienteUnion } from '../types/client';
+import type { Vehiculo } from '../types/vehicle';
+import { clienteService } from '../services/clienteService';
+import { vehiculoService } from '../services/vehiculoService';
+import { contratoService } from '../services/contratoService';
 
 interface CreateContractProps {
   onNavigate?: (menuId: string) => void;
-  onCreate?: (contract: Contract) => void;
-  contractToEdit?: Contract;
-  onUpdate?: (updated: Contract) => void;
-  clients?: Client[];
-  vehicles?: Vehicle[];
+  // Compat: callback legacy opcional (uso limitado)
+  onCreate?: (contract: ContratoResponseDto) => void;
+  contractToEdit?: ContratoResponseDto;
+  clients?: ClienteUnion[];
+  vehicles?: Vehiculo[];
 }
 
-type InsuranceKey = '' | 'basico' | 'completo';
+
+
+type InsuranceKey = '' | 'basico' | 'completo' | 'ninguno';
 
 const INSURANCE_LABEL: Record<InsuranceKey, string> = {
   '': 'Seleccionar seguro',
   'basico': 'Básico',
   'completo': 'Completo',
+  'ninguno': 'Sin seguro',
 };
 
-// Costo de seguro por día
-const INSURANCE_DAILY_RATE: Record<InsuranceKey, number> = {
-  '': 0,
-  'basico': 15,
-  'completo': 30,
-};
-
-const CreateContract: React.FC<CreateContractProps> = ({ onNavigate, onCreate, contractToEdit, onUpdate, clients = [], vehicles = [] }) => {
+const CreateContract: React.FC<CreateContractProps> = ({ onNavigate, onCreate, contractToEdit, clients: clientsProp = [], vehicles: vehiclesProp = [] }) => {
   const [clientId, setClientId] = useState<string>('');
   const [vehicleId, setVehicleId] = useState<string>('');
-  const [startDate, setStartDate] = useState(contractToEdit?.startDate || '');
-  const [endDate, setEndDate] = useState(contractToEdit?.endDate || '');
-  const [dailyRate, setDailyRate] = useState<number | ''>(contractToEdit?.dailyRate ?? 850);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [dailyRate, setDailyRate] = useState<number | ''>(850);
   const [insurance, setInsurance] = useState<InsuranceKey>('');
   const [deposit, setDeposit] = useState<number | ''>(2000);
   const [extraDrivers, setExtraDrivers] = useState('');
   const [specialRequests, setSpecialRequests] = useState('');
+  const [clients, setClients] = useState<ClienteUnion[]>(clientsProp);
+  const [vehicles, setVehicles] = useState<Vehiculo[]>(vehiclesProp);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type?: 'warning' | 'danger' | 'info' | 'success';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+  // const [loading, setLoading] = useState<boolean>(false);
+  // const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (clientsProp.length === 0) {
+      Promise.all([
+        clienteService.findAllActivos(),
+        vehiculoService.findDisponibles().catch(() => vehiculoService.listarPorEstado('DISPONIBLE')),
+      ])
+        .then(([cs, vs]) => { setClients(cs); setVehicles(vs); })
+        .catch(() => {/* noop: UI minimal */});
+    }
+  }, [clientsProp.length]);
 
   // Parseador robusto para admitir 'YYYY-MM-DD' (input date) y 'DD/MM/YYYY'
   const parseDate = (val: string): Date | null => {
@@ -61,78 +88,124 @@ const CreateContract: React.FC<CreateContractProps> = ({ onNavigate, onCreate, c
     const e = parseDate(endDate);
     if (!s || !e) return 0;
     const ms = e.getTime() - s.getTime();
-    if (ms <= 0) return 0;
-    // Exclusivo de fecha fin (1..15 => 14)
-    return Math.ceil(ms / (1000 * 60 * 60 * 24));
+    if (ms < 0) return 0;
+    // Inclusivo: ambas fechas cuentan (21/11 al 30/11 = 10 días)
+    return Math.ceil(ms / (1000 * 60 * 60 * 24)) + 1;
   }, [startDate, endDate]);
 
+  const selectedVehicle = useMemo(() => vehicles.find(v => v.id === vehicleId), [vehicles, vehicleId]);
+
   const numDaily = typeof dailyRate === 'number' ? dailyRate : 0;
-  const insurancePerDay = INSURANCE_DAILY_RATE[insurance];
+  const depositAmount = typeof deposit === 'number' ? deposit : 0;
 
   const subtotal = days * numDaily;
-  const insuranceTotal = days * insurancePerDay;
-  const taxes = (subtotal + insuranceTotal) * 0.18;
-  const total = subtotal + insuranceTotal + taxes;
+  const baseForTax = subtotal + depositAmount; // subtotal + depósito
+  const taxes = baseForTax * 0.18; // IGV sobre (subtotal + depósito)
+  const total = baseForTax + taxes; // total = subtotal + depósito + IGV
 
-  const handleCreate = (e: React.FormEvent) => {
+  const displayClientName = (c: ClienteUnion) => c.tipoCliente === 'NATURAL'
+    ? `${c.nombre} ${c.apellido}`
+    : c.razonSocial || 'Empresa';
+
+  const displayVehicleLabel = (v: Vehiculo) => `${v.modelo?.marca?.nombre} ${v.modelo?.nombre} (${v.placa}) - ${v.tipoVehiculo?.nombre}`;
+
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mapear datos reales desde las listas actuales
-    const vSel = vehicles.find(v => v.id === vehicleId);
-    const v = vSel ? { vehicle: `${vSel.brand} ${vSel.model}`, plate: vSel.plate, type: vSel.type } : { vehicle: 'Vehículo', plate: '', type: 'Automóvil' };
+    try {
+      // Validaciones básicas
+      if (!clientId || !vehicleId) throw new Error('Debe seleccionar cliente y vehículo');
+      if (!startDate || !endDate || days <= 0) throw new Error('Fechas inválidas');
 
-    const genNumber = () => {
-      const y = new Date().getFullYear();
-      const rand = Math.floor(100 + Math.random() * 900); // 3 dígitos
-      return `CT-${y}-${rand}`;
-    };
-
-    if (contractToEdit) {
-      const updated: Contract = {
-        ...contractToEdit,
-        clientName: (clients.find(c => c.id === clientId)?.name) || contractToEdit.clientName,
-        vehicle: v.vehicle,
-        vehiclePlate: v.plate,
-        vehicleType: v.type,
-        period: days,
-        total: Math.round(total),
-        dailyRate: numDaily,
-        startDate: startDate || contractToEdit.startDate,
-        endDate: endDate || contractToEdit.endDate,
+      const detalle: DetalleContratoDto = {
+        idVehiculo: vehicleId,
+        precioDiario: numDaily,
       };
-      onUpdate?.(updated);
-      onNavigate?.('contratos');
-      return;
+
+      const dto: ContratoRequestDto = {
+        idCliente: clientId,
+        fechaInicio: startDate,
+        fechaFin: endDate,
+        observaciones: [
+          insurance ? `Seguro: ${INSURANCE_LABEL[insurance]}` : '',
+          deposit !== '' ? `Depósito: S/. ${deposit}` : '',
+          extraDrivers ? `Conductores: ${extraDrivers}` : '',
+          specialRequests ? `Solicitudes: ${specialRequests}` : '',
+        ].filter(Boolean).join(' | ') || undefined,
+        detalles: [detalle],
+      };
+
+      let result: ContratoResponseDto;
+      if (contractToEdit) {
+        result = await contratoService.update(contractToEdit.id, dto);
+        setConfirmDialog({
+          isOpen: true,
+          title: 'Éxito',
+          message: 'Contrato actualizado',
+          type: 'success',
+          onConfirm: () => {
+            setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+            onCreate?.(result);
+            onNavigate?.('contratos');
+          },
+        });
+      } else {
+        result = await contratoService.create(dto);
+        setConfirmDialog({
+          isOpen: true,
+          title: 'Éxito',
+          message: 'Contrato creado',
+          type: 'success',
+          onConfirm: () => {
+            setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+            onCreate?.(result);
+            onNavigate?.('contratos');
+          },
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'No se pudo crear el contrato';
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Error',
+        message: msg,
+        type: 'danger',
+        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+      });
     }
-
-    const newContract: Contract = {
-      id: Date.now().toString(),
-      contractNumber: genNumber(),
-      clientName: (clients.find(c => c.id === clientId)?.name) || 'Cliente',
-      vehicle: v.vehicle,
-      vehiclePlate: v.plate,
-      vehicleType: v.type,
-      period: days,
-      total: Math.round(total),
-      dailyRate: numDaily,
-      startDate: startDate || new Date().toISOString().slice(0, 10),
-      endDate: endDate || new Date().toISOString().slice(0, 10),
-      status: 'Activo',
-    };
-
-    onCreate?.(newContract);
-    onNavigate?.('contratos');
   };
 
   const handleCancel = () => onNavigate?.('contratos');
 
   // Preseleccionar cliente y vehículo en modo edición según datos del contrato
-  React.useEffect(() => {
+  useEffect(() => {
     if (!contractToEdit) return;
-    const c = clients.find(c => c.name === contractToEdit.clientName);
-    if (c) setClientId(c.id);
-    const v = vehicles.find(v => v.plate === contractToEdit.vehiclePlate);
-    if (v) setVehicleId(v.id);
-  }, [contractToEdit, clients, vehicles]);
+    setStartDate(contractToEdit.fechaInicio || '');
+    setEndDate(contractToEdit.fechaFin || '');
+    const detalle = contractToEdit.detalles?.[0];
+    if (detalle) {
+      setVehicleId(detalle.idVehiculo || '');
+      setDailyRate(detalle.precioDiario ?? 850);
+    }
+    setClientId(contractToEdit.cliente?.id || '');
+    // Parse observaciones en edición
+    const obs = (contractToEdit.observaciones || '').split('|').map(o => o.trim()).filter(Boolean);
+    obs.forEach(o => {
+      if (/^Seguro:\s*/i.test(o)) {
+        const val = o.replace(/^Seguro:\s*/i, '').toLowerCase();
+        if (val.includes('básico') || val.includes('basico')) setInsurance('basico');
+        else if (val.includes('completo')) setInsurance('completo');
+        else if (val.includes('sin seguro') || val.includes('ninguno')) setInsurance('ninguno');
+      } else if (/^Depósito:\s*S\/.?/i.test(o)) {
+        const num = o.replace(/^Depósito:\s*S\/.?\s*/i, '').replace(/[,]/g,'');
+        const parsed = Number(num);
+        if (!isNaN(parsed)) setDeposit(parsed);
+      } else if (/^Conductores:/i.test(o)) {
+        setExtraDrivers(o.replace(/^Conductores:\s*/i,'').trim());
+      } else if (/^Solicitudes:/i.test(o)) {
+        setSpecialRequests(o.replace(/^Solicitudes:\s*/i,'').trim());
+      }
+    });
+  }, [contractToEdit]);
 
   return (
     <div className="create-contract">
@@ -155,8 +228,8 @@ const CreateContract: React.FC<CreateContractProps> = ({ onNavigate, onCreate, c
                 <label>Cliente *</label>
                 <select value={clientId} onChange={(e) => setClientId(e.target.value)} required>
                   <option value="">Seleccionar cliente</option>
-                  {(clients || []).filter(c => c.status === 'Activo').map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                  {(clients || []).filter(c => c.activo).map(c => (
+                    <option key={c.id} value={c.id}>{displayClientName(c)}</option>
                   ))}
                 </select>
               </div>
@@ -164,10 +237,19 @@ const CreateContract: React.FC<CreateContractProps> = ({ onNavigate, onCreate, c
                 <label>Vehículo *</label>
                 <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} required>
                   <option value="">Seleccionar vehículo</option>
-                  {(vehicles || []).filter(v => v.status === 'Disponible').map(v => (
-                    <option key={v.id} value={v.id}>{`${v.brand} ${v.model} (${v.plate}) - ${v.type}`}</option>
+                  {(vehicles || []).filter(v => v.estado === 'DISPONIBLE').map(v => (
+                    <option key={v.id} value={v.id}>{displayVehicleLabel(v)}</option>
                   ))}
                 </select>
+                {selectedVehicle && selectedVehicle.imagenUrl && (
+                  <div style={{ marginTop: '12px', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+                    <img 
+                      src={selectedVehicle.imagenUrl} 
+                      alt={`${selectedVehicle.marca} ${selectedVehicle.modelo}`} 
+                      style={{ width: '100%', height: '180px', objectFit: 'cover', display: 'block' }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -277,8 +359,8 @@ const CreateContract: React.FC<CreateContractProps> = ({ onNavigate, onCreate, c
               <span>S/. {subtotal.toLocaleString()}</span>
             </div>
             <div className="summary-row">
-              <span>Seguro:</span>
-              <span>S/. {insuranceTotal.toLocaleString()}</span>
+              <span>Depósito:</span>
+              <span>S/. {depositAmount.toLocaleString()}</span>
             </div>
             <div className="summary-row">
               <span>Impuestos (18%):</span>
@@ -296,6 +378,15 @@ const CreateContract: React.FC<CreateContractProps> = ({ onNavigate, onCreate, c
           </div>
         </aside>
       </form>
+      
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

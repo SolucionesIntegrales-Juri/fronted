@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import StatCard from '../components/StatCard';
 import QuickActionCard from '../components/QuickActionCard';
 import ActivityList from '../components/ActivityList';
+import { activityService } from '../services/activityService';
 import AlertCard from '../components/AlertCard';
 import clienteGif from '../assets/cliente.gif';
 import vehiculoGif from '../assets/carro.gif';
@@ -9,26 +10,41 @@ import documentosGif from '../assets/documentos.gif';
 import dineroGif from '../assets/dinero.gif';
 import '../styles/Dashboard.css';
 import type { StatCard as StatCardType, QuickAction, Activity, Alert } from '../types';
-import type { Client } from '../types/client';
-import type { Vehicle } from '../types/vehicle';
-import type { Contract } from '../types/contract';
+import type { ClienteUnion } from '../types/client';
+import type { Vehiculo } from '../types/vehicle';
+import type { ContratoResponseDto } from '../types/contract';
+import { clienteService } from '../services/clienteService';
+import { vehiculoService } from '../services/vehiculoService';
+import { contratoService } from '../services/contratoService';
 
 interface DashboardProps {
   onNavigate?: (menuId: string) => void;
-  clients?: Client[];
-  vehicles?: Vehicle[];
-  contracts?: Contract[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ onNavigate, clients = [], vehicles = [], contracts = [] }) => {
-  // Cálculo de estadísticas en base a datos reales
+const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
+  // Estados locales con datos del backend
+  const [clients, setClients] = useState<ClienteUnion[]>([]);
+  const [vehicles, setVehicles] = useState<Vehiculo[]>([]);
+  const [contracts, setContracts] = useState<ContratoResponseDto[]>([]);
+
+  // Cargar datos mínimos para stats del dashboard
+  useEffect(() => {
+    // Cargar en paralelo; si falla algo, dejamos valores por defecto
+    Promise.allSettled([
+      clienteService.findAll().then(setClients),
+      vehiculoService.findAll().then(setVehicles),
+      contratoService.findAll().then(setContracts),
+    ]).then(() => void 0);
+  }, []);
+
+  // Cálculo de estadísticas en base a datos reales del backend
   const computedStats = useMemo(() => {
     const today = new Date();
     const clamp = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
-    const activeClients = clients.filter(c => c.status === 'Activo').length;
-    const availableVehicles = vehicles.filter(v => v.status === 'Disponible').length;
-    const activeContracts = contracts.filter(c => c.status === 'Activo' && clamp(new Date(c.endDate)) >= clamp(today)).length;
+    const activeClients = clients.filter(c => !!c.activo).length;
+    const availableVehicles = vehicles.filter(v => v.estado === 'DISPONIBLE').length;
+    const activeContracts = contracts.filter(c => (c.estado?.toUpperCase?.() !== 'FINALIZADO' && c.estado?.toUpperCase?.() !== 'CANCELADO') && clamp(new Date(c.fechaFin)) >= clamp(today)).length;
 
     // Ingresos del mes (prorrateado por días dentro del mes)
     const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -37,13 +53,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, clients = [], vehicle
     const daysBetweenInclusive = (a: Date, b: Date) => Math.max(0, Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
     const monthlyIncome = contracts.reduce((acc, c) => {
-      const start = clampDate(new Date(c.startDate));
-      const end = clampDate(new Date(c.endDate));
+      const start = clampDate(new Date(c.fechaInicio));
+      const end = clampDate(new Date(c.fechaFin));
       const startOverlap = start < monthStart ? monthStart : start;
       const endOverlap = end > monthEnd ? monthEnd : end;
       if (endOverlap < monthStart || startOverlap > monthEnd) return acc;
       const days = daysBetweenInclusive(startOverlap, endOverlap);
-      return acc + days * (c.dailyRate || 0);
+      const precioDiario = c.detalles?.[0]?.precioDiario || 0;
+      // Se agrega el IGV (18%) para coincidir con el total del contrato
+      return acc + (days * precioDiario * 1.18);
     }, 0);
 
     return { activeClients, availableVehicles, activeContracts, monthlyIncome };
@@ -107,28 +125,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, clients = [], vehicle
     },
   ];
 
-  const activities: Activity[] = [
-    {
-      id: '1',
-      description: 'Nuevo contrato creado para Juan Pérez',
-      time: 'hace 2 horas',
-    },
-    {
-      id: '2',
-      description: 'Vehículo Toyota Corolla agregado',
-      time: 'hace 4 horas',
-    },
-    {
-      id: '3',
-      description: 'Cliente María González registrada',
-      time: 'hace 6 horas',
-    },
-    {
-      id: '4',
-      description: 'Contrato finalizado - Luis Rodríguez',
-      time: 'hace 1 día',
-    },
-  ];
+  const [activities, setActivities] = useState<Activity[]>([]);
+
+  // Actividad reciente en tiempo real (localStorage + suscripción)
+  useEffect(() => {
+    const update = () => setActivities(activityService.getRecent());
+    update();
+    const unsub = activityService.subscribe(update);
+    const t = setInterval(update, 60_000); // refrescar textos relativos
+    return () => { unsub(); clearInterval(t); };
+  }, []);
 
   const alerts: Alert[] = [
     {
@@ -168,6 +174,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, clients = [], vehicle
     // Si se selecciona 'Ver Reportes' (id '4')
     if (actionId === '4') {
       onNavigate?.('reportes');
+      activityService.log('Navegaste a Reportes');
       return;
     }
 
@@ -183,8 +190,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, clients = [], vehicle
   return (
     <div className="dashboard">
       <div className="dashboard-header">
-        <h1 className="dashboard-title">Dashboard Principal</h1>
-        <p className="dashboard-subtitle">Resumen general del sistema de gestión de alquileres</p>
+        <div>
+          <h1 className="dashboard-title">Dashboard Principal</h1>
+          <p className="dashboard-subtitle">Resumen general del sistema de gestión de alquileres</p>
+        </div>
       </div>
 
       {/* Tarjetas de estadísticas */}

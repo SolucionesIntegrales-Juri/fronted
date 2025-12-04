@@ -1,68 +1,208 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import ClientCard from '../components/ClientCard';
 import ClientDetailsModal from '../components/ClientDetailsModal';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import '../styles/ClientManagement.css';
-import type { Client, ClientStats } from '../types/client';
+import type { ClienteUnion, ClientStats } from '../types/client';
+import { clienteService } from '../services/clienteService';
 
 
 interface ClientManagementProps {
-  clients?: Client[];
   onNavigate?: (menuId: string) => void;
-  onDeleteClient?: (id: string) => void;
-  onEditClient?: (client: Client) => void;
-  onChangeClientStatus?: (id: string, status: Client['status']) => void;
+  onEditClient?: (id: string, initialData: any) => void;
 }
 
-const ClientManagement: React.FC<ClientManagementProps> = ({ clients = [], onNavigate, onDeleteClient, onEditClient, onChangeClientStatus }) => {
+const ClientManagement: React.FC<ClientManagementProps> = ({ onNavigate, onEditClient }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [selectedClient, setSelectedClient] = useState<ClienteUnion | null>(null);
+  const [clients, setClients] = useState<ClienteUnion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type?: 'warning' | 'danger' | 'info' | 'success';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  const location = useLocation();
+
+  // Cargar clientes al montar el componente
+  useEffect(() => {
+    loadClients();
+  }, [location.key]);
+
+  const loadClients = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const clientesData = await clienteService.findAll();
+      setClients(clientesData);
+    } catch (err) {
+      console.error('Error al cargar clientes:', err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al cargar clientes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper para obtener el nombre completo del cliente
+  const getClientFullName = (client: ClienteUnion): string => {
+    if (client.tipoCliente === 'NATURAL') {
+      return `${client.nombre} ${client.apellido}`;
+    } else {
+      return client.razonSocial;
+    }
+  };
 
   const stats: ClientStats = useMemo(() => {
     const total = clients.length;
-    const active = clients.filter(c => c.status === 'Activo').length;
+    const active = clients.filter(c => c.activo).length;
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
     const newThisMonth = clients.filter(c => {
-      // Preferir createdAt; fallback a timestamp numérico en id si aplica
-      let created: Date | null = null;
-      if (c.createdAt) {
-        const d = new Date(c.createdAt);
-        if (!isNaN(d.getTime())) created = d;
-      } else if (/^\d{10,}$/.test(c.id)) {
-        const d = new Date(Number(c.id));
-        if (!isNaN(d.getTime())) created = d;
-      }
-      if (!created) return false;
+      const created = new Date(c.creadoEn);
+      if (isNaN(created.getTime())) return false;
       return created.getFullYear() === year && created.getMonth() === month;
     }).length;
     return { total, active, newThisMonth };
   }, [clients]);
 
-  // `clients` prop is the source of truth; if empty, you may show a placeholder list or none.
-
-  const filteredClients = clients.filter(client =>
-    client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    client.location.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredClients = clients.filter(client => {
+    const fullName = getClientFullName(client).toLowerCase();
+    const searchLower = searchTerm.toLowerCase();
+    return (
+      fullName.includes(searchLower) ||
+      client.correo.toLowerCase().includes(searchLower) ||
+      (client.direccion && client.direccion.toLowerCase().includes(searchLower))
+    );
+  });
 
   const handleNewClient = () => {
     onNavigate?.('register-client');
   };
 
-  const handleViewDetails = (client: Client) => {
+  const handleViewDetails = (client: ClienteUnion) => {
     setSelectedClient(client);
   };
 
-  const handleEdit = (client: Client) => {
-    // Por ahora navegamos al registro para editar/crear
-    onEditClient?.(client);
-    onNavigate?.('register-client');
+  const handleEdit = (client: ClienteUnion) => {
+    // TODO: Implementar edición con navegación a RegisterClient pasando el cliente
+    // Mapear cliente existente a initialData esperado por RegisterClient
+    if (onEditClient) {
+      if (client.tipoCliente === 'NATURAL') {
+        const naturalInitial = {
+          nombres: (client as any).nombre,
+          apellidos: (client as any).apellido,
+          tipoDocumento: ((client as any).tipoDocumento || '').toLowerCase(),
+          numeroDocumento: (client as any).numeroDocumento,
+          correo: client.correo,
+          telefono: client.telefono,
+          direccion: client.direccion,
+          contactoEmergenciaNombre: (client as any).contactoEmergenciaNombre,
+          contactoEmergenciaTelefono: (client as any).contactoEmergenciaTelefono,
+          notas: (client as any).notas,
+        };
+        onEditClient(client.id, naturalInitial);
+      } else {
+        const empresa = client as any;
+        const empresaInitial = {
+          razonSocial: empresa.razonSocial,
+          ruc: empresa.ruc,
+          giroComercial: empresa.giroComercial,
+          direccionFiscal: empresa.direccionFiscal,
+          correo: empresa.correo,
+          telefono: empresa.telefono,
+          direccion: empresa.direccion,
+          representanteNombres: empresa.representante?.nombre,
+          representanteApellidos: empresa.representante?.apellido,
+          representanteTipoDocumento: (empresa.representante?.tipoDocumento || '').toLowerCase(),
+          representanteNumeroDocumento: empresa.representante?.numeroDocumento,
+          representanteCargo: empresa.representante?.cargo,
+          representanteCorreo: empresa.representante?.correo,
+          representanteTelefono: empresa.representante?.telefono,
+          contactoEmergenciaNombre: empresa.contactoEmergenciaNombre,
+          contactoEmergenciaTelefono: empresa.contactoEmergenciaTelefono,
+          notas: empresa.notas,
+        };
+        onEditClient(client.id, empresaInitial);
+      }
+    } else {
+      onNavigate?.('register-client');
+    }
   };
 
-  const handleDelete = (id: string) => {
-    onDeleteClient?.(id);
+  const handleDelete = async (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Eliminar cliente',
+      message: '¿Eliminar definitivamente este cliente? Esta acción no se puede deshacer.',
+      type: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        try {
+          await clienteService.purge(id);
+          setConfirmDialog({
+            isOpen: true,
+            title: 'Éxito',
+            message: 'Cliente eliminado definitivamente',
+            type: 'success',
+            onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+          });
+          await loadClients();
+        } catch (err) {
+          console.error('Error al eliminar cliente:', err);
+          setConfirmDialog({
+            isOpen: true,
+            title: 'Error',
+            message: `Error al eliminar cliente: ${err instanceof Error ? err.message : 'Error desconocido'}`,
+            type: 'danger',
+            onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+          });
+        }
+      },
+    });
+  };
+
+  const handleChangeStatus = async (id: string, activo: boolean) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: `${activo ? 'Activar' : 'Desactivar'} cliente`,
+      message: `¿Está seguro de ${activo ? 'activar' : 'desactivar'} este cliente?`,
+      type: 'warning',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        try {
+          await clienteService.setActivo(id, activo);
+          setConfirmDialog({
+            isOpen: true,
+            title: 'Éxito',
+            message: `Cliente ${activo ? 'activado' : 'desactivado'} correctamente`,
+            type: 'success',
+            onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+          });
+          await loadClients();
+          setSelectedClient(null);
+        } catch (err) {
+          console.error('Error al cambiar estado:', err);
+          setConfirmDialog({
+            isOpen: true,
+            title: 'Error',
+            message: `Error al cambiar estado: ${err instanceof Error ? err.message : 'Error desconocido'}`,
+            type: 'danger',
+            onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+          });
+        }
+      },
+    });
   };
 
   const handleFilters = () => {
@@ -83,8 +223,21 @@ const ClientManagement: React.FC<ClientManagementProps> = ({ clients = [], onNav
         </button>
       </div>
 
-      {/* Stats Cards */}
+      {/* Loading y Error States */}
+      {loading && (
+        <div className="loading-message" style={{ padding: '20px', textAlign: 'center' }}>
+          Cargando clientes...
+        </div>
+      )}
       
+      {error && (
+        <div className="error-message" style={{ padding: '20px', textAlign: 'center', color: '#ef4444' }}>
+          Error: {error}
+        </div>
+      )}
+
+      {/* Stats Cards */}
+      {!loading && !error && (
       <div className="client-stats">
         <div className="stat-card-simple">
           <div className="stat-icon">
@@ -107,17 +260,14 @@ const ClientManagement: React.FC<ClientManagementProps> = ({ clients = [], onNav
               client={selectedClient}
               onClose={() => setSelectedClient(null)}
               onEdit={(client) => {
-                onEditClient?.(client);
+                handleEdit(client);
                 setSelectedClient(null);
-                onNavigate?.('register-client');
               }}
               onDelete={(id) => {
-                onDeleteClient?.(id);
-                setSelectedClient(null);
+                handleDelete(id);
               }}
-              onChangeStatus={(id, status) => {
-                onChangeClientStatus?.(id, status);
-                setSelectedClient(prev => (prev && prev.id === id ? { ...prev, status } : prev));
+              onChangeStatus={(id, activo) => {
+                handleChangeStatus(id, activo);
               }}
             />
           )}
@@ -151,8 +301,10 @@ const ClientManagement: React.FC<ClientManagementProps> = ({ clients = [], onNav
           </div>
         </div>
       </div>
+      )}
 
       {/* Client List */}
+      {!loading && !error && (
       <div className="client-list-section">
         <h2 className="section-title">Lista de Clientes</h2>
         
@@ -189,7 +341,17 @@ const ClientManagement: React.FC<ClientManagementProps> = ({ clients = [], onNav
             <p>No se encontraron clientes que coincidan con la búsqueda</p>
           </div>
         )}
-      </div>
+        </div>
+      )}
+      
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

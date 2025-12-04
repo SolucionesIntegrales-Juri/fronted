@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import '../styles/ContractCard.css';
-import type { Contract } from '../types/contract';
+import type { ContratoResponseDto } from '../types/contract';
 
 interface ContractCardProps {
-  contract: Contract;
+  contract: ContratoResponseDto;
   onViewDetails: () => void;
-  onEdit?: (contract: Contract) => void;
+  onEdit?: (contract: ContratoResponseDto) => void;
   onDelete?: (id: string) => void;
 }
 
@@ -14,7 +14,7 @@ const ContractCard: React.FC<ContractCardProps> = ({ contract, onViewDetails, on
   const menuRef = useRef<HTMLDivElement | null>(null);
   const today = new Date();
   const clamp = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const isEnded = clamp(new Date(contract.endDate)) < clamp(today);
+  const isEnded = clamp(new Date(contract.fechaFin)) < clamp(today);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -24,22 +24,52 @@ const ContractCard: React.FC<ContractCardProps> = ({ contract, onViewDetails, on
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
   const getStatusBadge = () => {
-    if (isEnded) {
+    const est = (contract.estado || '').toUpperCase();
+    if (isEnded && est !== 'FINALIZADO' && est !== 'CANCELADO') {
       return <span className="contract-status-badge inactivo">• Inactivo</span>;
     }
-    switch (contract.status) {
-      case 'Activo':
-        return <span className="contract-status-badge activo">✓ Activo</span>;
-      case 'Finalizado':
-        return <span className="contract-status-badge finalizado">✓ Finalizado</span>;
-      case 'Por Vencer':
-        return <span className="contract-status-badge por-vencer">⚠ Por Vencer</span>;
-      case 'Pendiente':
-        return <span className="contract-status-badge pendiente">⏱ Pendiente</span>;
-      default:
-        return null;
-    }
+    if (est === 'FINALIZADO') return <span className="contract-status-badge finalizado">✓ Finalizado</span>;
+    if (est === 'CANCELADO') return <span className="contract-status-badge pendiente">⏱ Cancelado</span>;
+    return <span className="contract-status-badge activo">✓ Activo</span>;
   };
+
+  // Lógica para recalcular el total igual que el resumen previo a crear
+  const computedTotal = useMemo(() => {
+    try {
+      const days = contract.diasTotales || 0;
+      const daily = contract.detalles?.[0]?.precioDiario || 0;
+      const subtotal = days * daily;
+      const obs = contract.observaciones || '';
+
+      // Extraer depósito numérico
+      let deposit = 0;
+      const depMatch = obs.match(/Depósito:\s*S\/.?\s*(\d+[,.]?\d*)/i);
+      if (depMatch) {
+        deposit = Number(depMatch[1].replace(',', '.')) || 0;
+      }
+
+      // Calcular total: (subtotal + depósito) + IGV
+      const baseForTax = subtotal + deposit;
+      const taxes = baseForTax * 0.18;
+      const total = baseForTax + taxes;
+      return total;
+    } catch {
+      return Number(contract.montoTotal || 0);
+    }
+  }, [contract]);
+
+  // Calcular días restantes hasta la fecha de fin
+  const daysRemaining = useMemo(() => {
+    try {
+      const endDate = new Date(contract.fechaFin);
+      const todayDate = new Date();
+      const diff = endDate.getTime() - todayDate.getTime();
+      const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+      return days > 0 ? days : 0;
+    } catch {
+      return 0;
+    }
+  }, [contract.fechaFin]);
 
   return (
     <div className="contract-card">
@@ -47,8 +77,8 @@ const ContractCard: React.FC<ContractCardProps> = ({ contract, onViewDetails, on
         <div className="contract-title-section">
           <span className="contract-icon">📄</span>
           <div className="contract-info">
-            <h3 className="contract-number">{contract.contractNumber}</h3>
-            <p className="contract-client">{contract.clientName}</p>
+            <h3 className="contract-number">{contract.codigoContrato}</h3>
+            <p className="contract-client">{contract.cliente?.nombre}</p>
           </div>
         </div>
         {getStatusBadge()}
@@ -58,7 +88,20 @@ const ContractCard: React.FC<ContractCardProps> = ({ contract, onViewDetails, on
         <div className="contract-detail-row">
           <div className="detail-item">
             <span className="detail-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" className="icon icon-tabler icon-tabler-car-suv" width="26" height="28" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              {contract.detalles?.[0]?.vehiculo?.imagenUrl ? (
+                <img 
+                  src={contract.detalles[0].vehiculo.imagenUrl} 
+                  alt="Vehículo" 
+                  style={{ 
+                    width: '48px', 
+                    height: '48px', 
+                    borderRadius: '6px', 
+                    objectFit: 'cover',
+                    marginTop: '-4px' // Ajuste visual para alinear con el texto
+                  }}
+                />
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="icon icon-tabler icon-tabler-car-suv" width="26" height="28" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
                     <path d="M5 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"></path>
                     <path d="M16 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"></path>
@@ -68,10 +111,11 @@ const ContractCard: React.FC<ContractCardProps> = ({ contract, onViewDetails, on
                     <path d="M22.001 14.001a4.992 4.992 0 0 0 -4.001 -2.001a4.992 4.992 0 0 0 -4 2h-3a4.998 4.998 0 0 0 -8.003 .003"></path>
                     <path d="M5 12v-3h13"></path>
                 </svg>
+              )}
             </span>
             <div className="detail-content">
               <span className="detail-label">Vehículo</span>
-              <span className="detail-value">{contract.vehicle} ({contract.vehiclePlate}) - {contract.vehicleType}</span>
+              <span className="detail-value">{`${contract.detalles?.[0]?.marcaVehiculo || ''} ${contract.detalles?.[0]?.modeloVehiculo || ''} (${contract.detalles?.[0]?.placaVehiculo || ''})`}</span>
             </div>
           </div>
         </div>
@@ -91,7 +135,7 @@ const ContractCard: React.FC<ContractCardProps> = ({ contract, onViewDetails, on
             </span>
             <div className="detail-content-small">
               <span className="detail-label-small">Período</span>
-              <span className="detail-value-small">{contract.period} días</span>
+              <span className="detail-value-small">{contract.diasTotales} días {daysRemaining > 0 ? `(${daysRemaining} restantes)` : '(finalizado)'}</span>
             </div>
           </div>
 
@@ -108,7 +152,7 @@ const ContractCard: React.FC<ContractCardProps> = ({ contract, onViewDetails, on
             </span>
             <div className="detail-content-small">
               <span className="detail-label-small">Total</span>
-              <span className="detail-value-small">S/. {contract.total.toLocaleString()}</span>
+              <span className="detail-value-small">S/. {computedTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
             </div>
           </div>
 
@@ -116,14 +160,14 @@ const ContractCard: React.FC<ContractCardProps> = ({ contract, onViewDetails, on
             <span className="detail-icon-small">🕐</span>
             <div className="detail-content-small">
               <span className="detail-label-small">Fechas</span>
-              <span className="detail-value-small">{contract.startDate} - {contract.endDate}</span>
+              <span className="detail-value-small">{contract.fechaInicio} - {contract.fechaFin}</span>
             </div>
           </div>
         </div>
       </div>
 
       <div className="contract-footer">
-        <span className="daily-rate">Tarifa diaria: S/. {contract.dailyRate.toLocaleString()}</span>
+        <span className="daily-rate">Tarifa diaria: S/. {(contract.detalles?.[0]?.precioDiario || 0).toLocaleString()}</span>
         <div className="contract-actions">
           <button className="btn-contract-details" onClick={onViewDetails}>
             Ver Detalles
@@ -139,9 +183,7 @@ const ContractCard: React.FC<ContractCardProps> = ({ contract, onViewDetails, on
                   Editar contrato
                 </button>
                 <button className="contract-menu-item danger" role="menuitem" onClick={() => {
-                  if (onDelete) {
-                    if (confirm(`¿Eliminar el contrato ${contract.contractNumber}?`)) onDelete(contract.id);
-                  }
+                  onDelete?.(contract.id);
                   setOpenMenu(false);
                 }}>
                   <span className="menu-icon">🗑️</span>

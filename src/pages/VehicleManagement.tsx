@@ -1,15 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import VehicleCard from '../components/VehicleCard';
 import VehicleDetailsModal from '../components/VehicleDetailsModal';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import '../styles/VehicleManagement.css';
-import type { Vehicle, VehicleStats } from '../types/vehicle';
+import type { Vehiculo, VehicleStats, EstadoVehiculo, TipoCombustible, CrearVehiculoDto, ActualizarVehiculoDto, Modelo, Marca, TipoVehiculo as TipoVehiculoEntity } from '../types/vehicle';
+import { vehiculoService } from '../services/vehiculoService';
 
 
 interface VehicleManagementProps {
   startAdding?: boolean;
-  vehicles?: Vehicle[];
-  onAddVehicle?: (vehicle: Vehicle) => void;
-  onUpdateVehicle?: (id: string, patch: Partial<Vehicle>) => void;
+  vehicles?: Vehiculo[];
+  onAddVehicle?: (vehicle: Vehiculo) => void;
+  onUpdateVehicle?: (id: string, patch: Partial<Vehiculo>) => void;
   onDeleteVehicle?: (id: string) => void;
 }
 
@@ -17,56 +19,114 @@ const VehicleManagement: React.FC<VehicleManagementProps> = ({ startAdding = fal
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
-  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehiculo | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [modelos, setModelos] = useState<Modelo[]>([]);
+  const [marcas, setMarcas] = useState<Marca[]>([]);
+  const [tiposVehiculo, setTiposVehiculo] = useState<TipoVehiculoEntity[]>([]);
+  const [catalogsLoading, setCatalogsLoading] = useState<boolean>(false);
+  const [catalogsError, setCatalogsError] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type?: 'warning' | 'danger' | 'info' | 'success';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   interface NewVehicleForm {
-    brand: string;
-    model: string;
-    year: string;
-    plate: string;
-    type: string;
-    fuel: string;
-    description: string;
+    placa: string;
+    marcaId: string;
+    modeloId: string;
+    tipoVehiculoId: string;
+    anioFabricacion: string;
+    combustible: '' | TipoCombustible;
+    descripcion: string;
+    imagen: File | null;
   }
 
   const [newVehicle, setNewVehicle] = useState<NewVehicleForm>({
-    brand: '',
-    model: '',
-    year: new Date().getFullYear().toString(),
-    plate: '',
-    type: '',
-    fuel: '',
-    description: '',
+    placa: '',
+    marcaId: '',
+    modeloId: '',
+    tipoVehiculoId: '',
+    anioFabricacion: new Date().getFullYear().toString(),
+    combustible: '',
+    descripcion: '',
+    imagen: null,
   });
 
-  // Inventario base de ejemplo
-  const baseVehicles: Vehicle[] = [
-    
-  ];
-
-  // Estado del inventario mostrado (permite agregar nuevos vehículos)
-  const [items, setItems] = useState<Vehicle[]>(vehicles ?? baseVehicles);
+  // Estado del inventario mostrado
+  const [items, setItems] = useState<Vehiculo[]>(vehicles ?? []);
 
   // Si recibimos vehículos por props, sincronizamos con el estado local
   useEffect(() => {
-    if (vehicles) setItems(vehicles);
+    if (vehicles) {
+      setItems(vehicles);
+    }
   }, [vehicles]);
+
+  // Cargar desde API
+  useEffect(() => {
+    if (!vehicles) {
+      setLoading(true);
+      setError(null);
+      vehiculoService.findAll()
+        .then(data => setItems(data))
+        .catch(err => setError(err.message || 'Error al cargar vehículos'))
+        .finally(() => setLoading(false));
+    }
+  }, [vehicles]);
+
+  // Cargar catálogos de Modelos, Marcas y Tipos de Vehículo
+  useEffect(() => {
+    setCatalogsLoading(true);
+    setCatalogsError(null);
+    Promise.allSettled([
+      vehiculoService.listarModelos().then(setModelos),
+      vehiculoService.listarMarcas().then(setMarcas),
+      vehiculoService.listarTiposVehiculo().then(setTiposVehiculo),
+    ])
+      .then((results) => {
+        const rejected = results.find(r => r.status === 'rejected');
+        if (rejected) setCatalogsError('No se pudieron cargar algunos catálogos');
+      })
+      .finally(() => setCatalogsLoading(false));
+  }, []);
+
+  // Filtrar modelos según la marca seleccionada
+  const filteredModelos = useMemo(() => {
+    if (!newVehicle.marcaId) return [];
+    // Aseguramos que la comparación sea robusta (string vs string)
+    return modelos.filter(m => m.marca?.id && String(m.marca.id) === String(newVehicle.marcaId));
+  }, [modelos, newVehicle.marcaId]);
 
   // Cálculo de estadísticas a partir del inventario actual
   const stats: VehicleStats = useMemo(() => {
     const total = items.length;
-    const available = items.filter(v => v.status === 'Disponible').length;
-    const rented = items.filter(v => v.status === 'Alquilado').length;
-    const maintenance = items.filter(v => v.status === 'Mantenimiento').length;
+    // Solo contar como disponibles los vehículos que están activos Y en estado disponible
+    const available = items.filter(v => v.activo && v.estado === 'DISPONIBLE').length;
+    const rented = items.filter(v => v.estado === 'ALQUILADO').length;
+    // Los vehículos inactivos o en mantenimiento se cuentan como mantenimiento
+    const maintenance = items.filter(v => !v.activo || v.estado === 'MANTENIMIENTO').length;
     return { total, available, rented, maintenance };
   }, [items]);
 
-  const filteredVehicles = items.filter(vehicle =>
-    vehicle.brand.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vehicle.model.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vehicle.plate.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vehicle.type.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredVehicles = items.filter(vehicle => {
+    const t = searchTerm.toLowerCase();
+    return (
+      vehicle.modelo?.marca?.nombre?.toLowerCase().includes(t) ||
+      vehicle.modelo?.nombre?.toLowerCase().includes(t) ||
+      vehicle.placa?.toLowerCase().includes(t) ||
+      vehicle.tipoVehiculo?.nombre?.toLowerCase().includes(t)
+    );
+  });
 
   const handleNewVehicle = () => {
     setIsAdding(true);
@@ -78,103 +138,220 @@ const VehicleManagement: React.FC<VehicleManagementProps> = ({ startAdding = fal
 
   const handleAddChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setNewVehicle((prev) => ({ ...prev, [name]: value }));
+    setNewVehicle((prev) => {
+      if (name === 'marcaId') {
+        return { ...prev, marcaId: value, modeloId: '' };
+      }
+      return { ...prev, [name]: value };
+    });
   };
 
-  const handleAddSubmit = (e: React.FormEvent) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setNewVehicle(prev => ({ ...prev, imagen: e.target.files![0] }));
+    }
+  };
+
+  const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingVehicleId) {
-      // actualizar vehículo existente
-      const patch: Partial<Vehicle> = {
-        brand: newVehicle.brand || undefined,
-        model: newVehicle.model || undefined,
-        type: newVehicle.type || undefined,
-        year: parseInt(newVehicle.year, 10) || undefined,
-        plate: newVehicle.plate || undefined,
-        fuel: newVehicle.fuel || undefined,
-      };
-      if (onUpdateVehicle) {
-        onUpdateVehicle(editingVehicleId, patch);
+    try {
+      if (editingVehicleId) {
+        const dto: ActualizarVehiculoDto = {
+          placa: newVehicle.placa,
+          modeloId: newVehicle.modeloId,
+          tipoVehiculoId: newVehicle.tipoVehiculoId,
+          anioFabricacion: parseInt(newVehicle.anioFabricacion, 10),
+          combustible: newVehicle.combustible as TipoCombustible,
+          descripcion: newVehicle.descripcion || undefined,
+        };
+        if (onUpdateVehicle) {
+          onUpdateVehicle(editingVehicleId, dto as unknown as Partial<Vehiculo>);
+        } else {
+          let updated = await vehiculoService.update(editingVehicleId, dto);
+          
+          // Si hay nueva imagen, subirla
+          if (newVehicle.imagen) {
+            try {
+              updated = await vehiculoService.uploadImage(editingVehicleId, newVehicle.imagen);
+            } catch (imgErr) {
+              console.error("Error actualizando imagen", imgErr);
+            }
+          }
+
+          setItems(prev => prev.map(v => v.id === editingVehicleId ? updated : v));
+        }
       } else {
-        setItems(prev => prev.map(v => v.id === editingVehicleId ? { ...v, ...patch } as Vehicle : v));
+        const dto: CrearVehiculoDto = {
+          placa: newVehicle.placa,
+          modeloId: newVehicle.modeloId,
+          tipoVehiculoId: newVehicle.tipoVehiculoId,
+          anioFabricacion: parseInt(newVehicle.anioFabricacion, 10),
+          combustible: newVehicle.combustible as TipoCombustible,
+          descripcion: newVehicle.descripcion || undefined,
+          imagen: newVehicle.imagen || undefined,
+        };
+        if (onAddVehicle) {
+          // Si un padre quiere manejarlo, se lo pasamos (necesitará recargar)
+          // @ts-expect-error compatibilidad externa
+          onAddVehicle(dto);
+        } else {
+          // 1. Crear el vehículo (JSON)
+          const created = await vehiculoService.create(dto);
+          
+          // 2. Si hay imagen, subirla (Multipart)
+          if (dto.imagen) {
+            try {
+              const updatedWithImage = await vehiculoService.uploadImage(created.id, dto.imagen);
+              setItems((prev) => [updatedWithImage, ...prev]);
+            } catch (imgErr) {
+              console.error("Error subiendo imagen", imgErr);
+              // Si falla la imagen, mostramos el vehículo creado pero sin imagen
+              setItems((prev) => [created, ...prev]);
+              // Opcional: Notificar al usuario que la imagen falló
+            }
+          } else {
+            setItems((prev) => [created, ...prev]);
+          }
+        }
       }
-    } else {
-      // Crear vehículo nuevo y agregarlo al inventario mostrado
-      const vehicleToAdd: Vehicle = {
-        id: Date.now().toString(),
-        brand: newVehicle.brand || 'Sin marca',
-        model: newVehicle.model || 'Sin modelo',
-        type: newVehicle.type || 'Automóvil',
-        year: parseInt(newVehicle.year, 10) || new Date().getFullYear(),
-        plate: newVehicle.plate || '',
-        fuel: newVehicle.fuel || '',
-        lastMaintenance: new Date().toISOString().slice(0, 10),
-        status: 'Disponible',
-      };
-      if (onAddVehicle) {
-        onAddVehicle(vehicleToAdd);
-      } else {
-        setItems((prev) => [vehicleToAdd, ...prev]);
-      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'No se pudo guardar el vehículo';
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Error',
+        message: msg,
+        type: 'danger',
+        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+      });
     }
     setIsAdding(false);
     setEditingVehicleId(null);
     // limpiar formulario
-    setNewVehicle({ brand: '', model: '', year: new Date().getFullYear().toString(), plate: '', type: '', fuel: '', description: '' });
+    setNewVehicle({ placa: '', marcaId: '', modeloId: '', tipoVehiculoId: '', anioFabricacion: new Date().getFullYear().toString(), combustible: '', descripcion: '', imagen: null });
   };
 
   const handleAddCancel = () => {
     setIsAdding(false);
   };
 
-  const typeDescriptions: Record<string, string> = {
-    'Automóvil': 'Vehículos ligeros de uso personal (SUV, hatchback, sedan)',
-    'Camioneta': 'Vehículos tipo pickup o SUV de mayor capacidad',
-    'Camiones': 'Camiones de plataforma, pick-ups',
-    'Carga Pesada': 'Tractores, volquetes, cargadores',
-  };
+  // (Opcional) Se pueden cargar catálogos de modelos/tipos con endpoints dedicados si están disponibles
 
-  const fuelDescriptions: Record<string, string> = {
-    'Gasolina': 'Motores a gasolina convencionales',
-    'Diesel': 'Motores diésel para mayor eficiencia en carga',
-    'Electrico': 'Vehículos 100% eléctricos',
-    'Híbrido': 'Combinación de motor eléctrico y combustión',
-    'GLP': 'Gas licuado de petróleo',
-  };
-
-  const handleViewDetails = (vehicle: Vehicle) => {
+  const handleViewDetails = (vehicle: Vehiculo) => {
     setSelectedVehicle(vehicle);
   };
 
   const handleDeleteVehicle = (vehicleId: string) => {
-    if (onDeleteVehicle) {
-      onDeleteVehicle(vehicleId);
-    } else {
-      setItems(prev => prev.filter(v => v.id !== vehicleId));
-    }
-  };
-
-  const handleStartEditVehicle = (vehicle: Vehicle) => {
-    setIsAdding(true);
-    setEditingVehicleId(vehicle.id);
-    setNewVehicle({
-      brand: vehicle.brand,
-      model: vehicle.model,
-      year: String(vehicle.year),
-      plate: vehicle.plate,
-      type: vehicle.type,
-      fuel: vehicle.fuel,
-      description: '',
+    const vehicle = items.find(v => v.id === vehicleId);
+    const vehicleName = vehicle ? `${vehicle.modelo?.marca?.nombre || ''} ${vehicle.modelo?.nombre || ''}`.trim() : 'este vehículo';
+    const isActive = vehicle?.activo ?? true;
+    
+    setConfirmDialog({
+      isOpen: true,
+      title: isActive ? 'Desactivar vehículo' : 'Eliminar vehículo',
+      message: `¿${isActive ? 'Desactivar' : 'Eliminar definitivamente'} el vehículo ${vehicleName}? ${isActive ? '' : 'Esta acción no se puede deshacer.'}`,
+      type: 'danger',
+      onConfirm: () => {
+        if (onDeleteVehicle) {
+          onDeleteVehicle(vehicleId);
+        } else {
+          vehiculoService.purge(vehicleId)
+            .then(async () => {
+              setConfirmDialog({
+                isOpen: true,
+                title: 'Éxito',
+                message: 'Vehículo eliminado definitivamente',
+                type: 'success',
+                onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+              });
+              // Recargar lista
+              try {
+                const data = await vehiculoService.findAll();
+                setItems(data);
+              } catch (e) {
+                // fallback: eliminar localmente
+                setItems(prev => prev.filter(v => v.id !== vehicleId));
+              }
+            })
+            .catch(err => {
+              setConfirmDialog({
+                isOpen: true,
+                title: 'Error',
+                message: err?.message || 'No se pudo eliminar el vehículo',
+                type: 'danger',
+                onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+              });
+            });
+        }
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      },
     });
   };
 
-  const handleChangeStatus = (id: string, status: Vehicle['status']) => {
+  const handleChangeActivo = async (id: string, activo: boolean) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: `${activo ? 'Activar' : 'Inactivar'} vehículo`,
+      message: `¿Está seguro de ${activo ? 'activar' : 'inactivar'} este vehículo?`,
+      type: 'warning',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        try {
+          await vehiculoService.setActivo(id, activo);
+          setConfirmDialog({
+            isOpen: true,
+            title: 'Éxito',
+            message: `Vehículo ${activo ? 'activado' : 'desactivado'} correctamente`,
+            type: 'success',
+            onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+          });
+          const data = await vehiculoService.findAll();
+          setItems(data);
+          setSelectedVehicle(null);
+        } catch (e) {
+          setConfirmDialog({
+            isOpen: true,
+            title: 'Error',
+            message: `Error al cambiar estado de activación: ${e instanceof Error ? e.message : 'Error desconocido'}`,
+            type: 'danger',
+            onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+          });
+        }
+      },
+    });
+  };
+
+  const handleStartEditVehicle = (vehicle: Vehiculo) => {
+    setIsAdding(true);
+    setEditingVehicleId(vehicle.id);
+    setNewVehicle({
+      placa: vehicle.placa,
+      modeloId: vehicle.modelo?.id || '',
+      tipoVehiculoId: vehicle.tipoVehiculo?.id || '',
+      anioFabricacion: String(vehicle.anioFabricacion),
+      combustible: vehicle.combustible,
+      descripcion: vehicle.descripcion || '',
+    });
+  };
+
+  const handleChangeStatus = (id: string, status: EstadoVehiculo) => {
     if (onUpdateVehicle) {
-      onUpdateVehicle(id, { status });
+      onUpdateVehicle(id, { estado: status } as Partial<Vehiculo>);
     } else {
-      setItems(prev => prev.map(v => v.id === id ? { ...v, status } : v));
+      vehiculoService.actualizarEstado(id, status)
+        .then((updated) => {
+          setItems(prev => prev.map(v => v.id === id ? updated : v));
+          setSelectedVehicle(prev => (prev && prev.id === id ? updated : prev));
+        })
+        .catch(err => {
+          setConfirmDialog({
+            isOpen: true,
+            title: 'Error',
+            message: err?.message || 'No se pudo actualizar el estado',
+            type: 'danger',
+            onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false })),
+          });
+        });
     }
-    setSelectedVehicle(prev => (prev && prev.id === id ? { ...prev, status } : prev));
   };
 
   const handleFilters = () => {
@@ -202,62 +379,100 @@ const VehicleManagement: React.FC<VehicleManagementProps> = ({ startAdding = fal
             <div className="field-row">
               <div className="field-col">
                 <label>Marca *</label>
-                <input name="brand" value={newVehicle.brand} onChange={handleAddChange} placeholder="Ej: Toyota, Honda, Nissan" />
+                <select name="marcaId" value={newVehicle.marcaId} onChange={handleAddChange} required>
+                  <option value="">Seleccionar marca</option>
+                  {marcas.map((m) => (
+                    <option key={m.id} value={m.id}>{m.nombre}</option>
+                  ))}
+                </select>
               </div>
               <div className="field-col">
                 <label>Modelo *</label>
-                <input name="model" value={newVehicle.model} onChange={handleAddChange} placeholder="Ej: Corolla, Civic, Sentra" />
+                <select 
+                  name="modeloId" 
+                  value={newVehicle.modeloId} 
+                  onChange={handleAddChange} 
+                  required
+                  disabled={!newVehicle.marcaId}
+                >
+                  <option value="">{newVehicle.marcaId ? 'Seleccionar modelo' : 'Seleccione una marca primero'}</option>
+                  {filteredModelos.map((m) => (
+                    <option key={m.id} value={m.id}>{m.nombre}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
             <div className="field-row">
+              <div className="field-col">
+                <label>Tipo de Vehículo *</label>
+                <select name="tipoVehiculoId" value={newVehicle.tipoVehiculoId} onChange={handleAddChange} required>
+                  <option value="">Seleccionar tipo de vehículo</option>
+                  {tiposVehiculo.map((t) => (
+                    <option key={t.id} value={t.id}>{t.nombre}</option>
+                  ))}
+                </select>
+              </div>
               <div className="field-col">
                 <label>Año *</label>
-                <input name="year" value={newVehicle.year} onChange={handleAddChange} />
+                <input name="anioFabricacion" value={newVehicle.anioFabricacion} onChange={handleAddChange} />
               </div>
+            </div>
+
+            <div className="field-row">
               <div className="field-col">
                 <label>Placa *</label>
-                <input name="plate" value={newVehicle.plate} onChange={handleAddChange} placeholder="AQP-123" />
+                <input name="placa" value={newVehicle.placa} onChange={handleAddChange} placeholder="AQP-123" />
               </div>
-            </div>
-
-            <div className="field-row">
-              <div className="field-col-full">
-                <label>Tipo de Vehículo *</label>
-                <select name="type" value={newVehicle.type} onChange={handleAddChange}>
-                  <option value="">Seleccionar tipo de vehículo</option>
-                  <option value="Automóvil">Automóvil</option>
-                  <option value="Camioneta">Camioneta</option>
-                  <option value="Camiones">Camiones</option>
-                  <option value="Carga Pesada">Carga Pesada</option>
-                </select>
-                {newVehicle.type && (
-                  <div className="select-description">{typeDescriptions[newVehicle.type]}</div>
-                )}
-              </div>
-            </div>
-
-            <div className="field-row">
-              <div className="field-col-full">
+              <div className="field-col">
                 <label>Tipo de Combustible</label>
-                <select name="fuel" value={newVehicle.fuel} onChange={handleAddChange}>
+                <select name="combustible" value={newVehicle.combustible} onChange={handleAddChange}>
                   <option value="">Seleccionar combustible</option>
-                  <option value="Gasolina">Gasolina</option>
-                  <option value="Diesel">Diesel</option>
-                  <option value="Híbrido">Híbrido</option>
-                  <option value="Electrico">Eléctrico</option>
+                  <option value="GASOLINA">Gasolina</option>
+                  <option value="DIESEL">Diésel</option>
+                  <option value="HIBRIDO">Híbrido</option>
+                  <option value="ELECTRICO">Eléctrico</option>
                   <option value="GLP">GLP</option>
                 </select>
-                {newVehicle.fuel && (
-                  <div className="select-description">{fuelDescriptions[newVehicle.fuel]}</div>
-                )}
+              </div>
+            </div>
+
+            <div className="field-row">
+              <div className="field-col-full">
+                <label>Imagen del Vehículo</label>
+                <div className="file-upload-wrapper">
+                  <input 
+                    type="file" 
+                    id="vehicle-image" 
+                    accept="image/*" 
+                    onChange={handleFileChange} 
+                    className="file-input-hidden" 
+                  />
+                  <label htmlFor="vehicle-image" className="file-upload-label">
+                    <div className="upload-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                      </svg>
+                    </div>
+                    <span className="upload-text">
+                      {newVehicle.imagen ? newVehicle.imagen.name : 'Haz clic para subir una imagen'}
+                    </span>
+                  </label>
+                  {newVehicle.imagen && (
+                    <div className="image-preview">
+                      <img src={URL.createObjectURL(newVehicle.imagen)} alt="Vista previa" />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
             <div className="field-row">
               <div className="field-col-full">
                 <label>Descripción Adicional</label>
-                <textarea name="description" value={newVehicle.description} onChange={handleAddChange} placeholder="Detalles adicionales del vehículo, características especiales, etc." />
+                <textarea name="descripcion" value={newVehicle.descripcion} onChange={handleAddChange} placeholder="Detalles adicionales del vehículo, características especiales, etc." />
               </div>
             </div>
 
@@ -279,6 +494,13 @@ const VehicleManagement: React.FC<VehicleManagementProps> = ({ startAdding = fal
               Nuevo Vehículo
             </button>
           </div>
+
+          {(loading || catalogsLoading) && (
+            <div className="no-results"><p>Cargando vehículos…</p></div>
+          )}
+          {(error || catalogsError) && (
+            <div className="no-results"><p style={{ color: 'crimson' }}>{error}</p></div>
+          )}
 
           {/* Stats Cards */}
           <div className="vehicle-stats">
@@ -391,10 +613,20 @@ const VehicleManagement: React.FC<VehicleManagementProps> = ({ startAdding = fal
               onEdit={(v) => { setSelectedVehicle(null); handleStartEditVehicle(v); }}
               onDelete={(id) => { handleDeleteVehicle(id); setSelectedVehicle(null); }}
               onChangeStatus={handleChangeStatus}
+              onChangeActivo={handleChangeActivo}
             />
           )}
         </>
       )}
+      
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };
