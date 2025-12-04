@@ -325,11 +325,13 @@ const VehicleManagement: React.FC<VehicleManagementProps> = ({ startAdding = fal
     setEditingVehicleId(vehicle.id);
     setNewVehicle({
       placa: vehicle.placa,
+      marcaId: vehicle.modelo?.marca?.id || '',
       modeloId: vehicle.modelo?.id || '',
       tipoVehiculoId: vehicle.tipoVehiculo?.id || '',
       anioFabricacion: String(vehicle.anioFabricacion),
       combustible: vehicle.combustible,
       descripcion: vehicle.descripcion || '',
+      imagen: null,
     });
   };
 

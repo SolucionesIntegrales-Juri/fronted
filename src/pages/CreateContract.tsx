@@ -245,7 +245,7 @@ const CreateContract: React.FC<CreateContractProps> = ({ onNavigate, onCreate, c
                   <div style={{ marginTop: '12px', borderRadius: '12px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
                     <img 
                       src={selectedVehicle.imagenUrl} 
-                      alt={`${selectedVehicle.marca} ${selectedVehicle.modelo}`} 
+                      alt={`${selectedVehicle.modelo?.marca?.nombre || ''} ${selectedVehicle.modelo?.nombre || ''}`} 
                       style={{ width: '100%', height: '180px', objectFit: 'cover', display: 'block' }}
                     />
                   </div>

@@ -7,6 +7,7 @@ import type {
   VehiculoContratoDto,
   VehiculoReporteDto,
   Modelo,
+  Marca,
   TipoVehiculo
 } from '../types/vehicle';
 

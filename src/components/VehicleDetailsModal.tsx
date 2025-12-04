@@ -12,7 +12,7 @@ interface VehicleDetailsModalProps {
   onChangeActivo?: (id: string, activo: boolean) => void; // activar/desactivar (soft delete / restore)
 }
 
-const VehicleDetailsModal: React.FC<VehicleDetailsModalProps> = ({ vehicle, onClose, onEdit, onDelete, onChangeStatus, onChangeActivo }) => {
+const VehicleDetailsModal: React.FC<VehicleDetailsModalProps> = ({ vehicle, onClose, onDelete, onChangeStatus, onChangeActivo }) => {
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -51,7 +51,6 @@ const VehicleDetailsModal: React.FC<VehicleDetailsModalProps> = ({ vehicle, onCl
   const handleChangeActivo = () => {
     if (!onChangeActivo) return;
     const newStatus = !vehicle.activo;
-    const action = newStatus ? 'activar' : 'inactivar';
     const vehicleName = `${vehicle.modelo?.marca?.nombre || ''} ${vehicle.modelo?.nombre || ''}`.trim() || 'este vehículo';
     setConfirmDialog({
       isOpen: true,

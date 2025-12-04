@@ -14,7 +14,7 @@ interface ContractDetailsModalProps {
   onDelete?: (id: string) => void;
 }
 
-const ContractDetailsModal: React.FC<ContractDetailsModalProps> = ({ contract, onClose, onEdit, onDelete }) => {
+const ContractDetailsModal: React.FC<ContractDetailsModalProps> = ({ contract, onClose, onDelete }) => {
   // Mantener una copia local para poder actualizar estado (finalización)
   const [contractData, setContractData] = useState<ContratoResponseDto>(contract);
   const [confirmDialog, setConfirmDialog] = useState<{

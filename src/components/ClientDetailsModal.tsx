@@ -12,7 +12,7 @@ interface ClientDetailsModalProps {
   onChangeStatus?: (id: string, activo: boolean) => void;
 }
 
-const ClientDetailsModal: React.FC<ClientDetailsModalProps> = ({ client, onClose, onEdit, onDelete, onChangeStatus }) => {
+const ClientDetailsModal: React.FC<ClientDetailsModalProps> = ({ client, onClose, onDelete, onChangeStatus }) => {
   // Estado local para permitir recarga completa de información (incl. campos opcionales)
   const [fullClient, setFullClient] = useState<ClienteUnion>(client);
   const [loadingExtra, setLoadingExtra] = useState(false);
