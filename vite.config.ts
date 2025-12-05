@@ -7,39 +7,39 @@ export default defineConfig({
   server: {
     proxy: {
       '/api/security': {
-        target: 'http://localhost:9100',
+        target: 'http://138.68.2.13:9100',
         changeOrigin: true,
       },
       '/api/clientes': {
-        target: 'http://localhost:8082',
+        target: 'http://138.68.2.13:8082',
         changeOrigin: true,
       },
       '/api/vehiculos': {
-        target: 'http://localhost:8083',
+        target: 'http://138.68.2.13:8083',
         changeOrigin: true,
       },
       '/api/modelos': {
-        target: 'http://localhost:8083',
+        target: 'http://138.68.2.13:8083',
         changeOrigin: true,
       },
       '/api/marcas': {
-        target: 'http://localhost:8083',
+        target: 'http://138.68.2.13:8083',
         changeOrigin: true,
       },
       '/api/tipos-vehiculo': {
-        target: 'http://localhost:8083',
+        target: 'http://138.68.2.13:8083',
         changeOrigin: true,
       },
       '/api/contratos': {
-        target: 'http://localhost:8084',
+        target: 'http://138.68.2.13:8084',
         changeOrigin: true,
       },
       '/api/comprobantes': {
-        target: 'http://localhost:8084',
+        target: 'http://138.68.2.13:8084',
         changeOrigin: true,
       },
       '/api/reportes': {
-        target: 'http://localhost:8085', 
+        target: 'http://138.68.2.13:8085', 
         changeOrigin: true,
       },
     },
