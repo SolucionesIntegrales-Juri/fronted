@@ -51,6 +51,24 @@
     },
 
     {
+      "source": "/api/mantenimientos",
+      "destination": "http://138.68.2.13:8083/api/mantenimientos"
+    },
+    {
+      "source": "/api/mantenimientos/(.*)",
+      "destination": "http://138.68.2.13:8083/api/mantenimientos/$1"
+    },
+
+    {
+      "source": "/api/users",
+      "destination": "http://138.68.2.13:8081/api/users"
+    },
+    {
+      "source": "/api/users/(.*)",
+      "destination": "http://138.68.2.13:8081/api/users/$1"
+    },
+
+    {
       "source": "/api/contratos",
       "destination": "http://138.68.2.13:8084/api/contratos"
     },
