@@ -2,39 +2,79 @@
   "rewrites": [
     {
       "source": "/api/security/(.*)",
-      "destination": "http://138.68.2.13:9100/$1"
+      "destination": "http://138.68.2.13:9100/api/security/$1"
+    },
+
+    {
+      "source": "/api/clientes",
+      "destination": "http://138.68.2.13:8082/api/clientes"
     },
     {
       "source": "/api/clientes/(.*)",
-      "destination": "http://138.68.2.13:8082/$1"
+      "destination": "http://138.68.2.13:8082/api/clientes/$1"
+    },
+
+    {
+      "source": "/api/vehiculos",
+      "destination": "http://138.68.2.13:8083/api/vehiculos"
     },
     {
       "source": "/api/vehiculos/(.*)",
-      "destination": "http://138.68.2.13:8083/$1"
+      "destination": "http://138.68.2.13:8083/api/vehiculos/$1"
+    },
+
+    {
+      "source": "/api/modelos",
+      "destination": "http://138.68.2.13:8083/api/modelos"
     },
     {
       "source": "/api/modelos/(.*)",
-      "destination": "http://138.68.2.13:8083/$1"
+      "destination": "http://138.68.2.13:8083/api/modelos/$1"
+    },
+
+    {
+      "source": "/api/marcas",
+      "destination": "http://138.68.2.13:8083/api/marcas"
     },
     {
       "source": "/api/marcas/(.*)",
-      "destination": "http://138.68.2.13:8083/$1"
+      "destination": "http://138.68.2.13:8083/api/marcas/$1"
+    },
+
+    {
+      "source": "/api/tipos-vehiculo",
+      "destination": "http://138.68.2.13:8083/api/tipos-vehiculo"
     },
     {
       "source": "/api/tipos-vehiculo/(.*)",
-      "destination": "http://138.68.2.13:8083/$1"
+      "destination": "http://138.68.2.13:8083/api/tipos-vehiculo/$1"
+    },
+
+    {
+      "source": "/api/contratos",
+      "destination": "http://138.68.2.13:8084/api/contratos"
     },
     {
       "source": "/api/contratos/(.*)",
-      "destination": "http://138.68.2.13:8084/$1"
+      "destination": "http://138.68.2.13:8084/api/contratos/$1"
+    },
+
+    {
+      "source": "/api/comprobantes",
+      "destination": "http://138.68.2.13:8084/api/comprobantes"
     },
     {
       "source": "/api/comprobantes/(.*)",
-      "destination": "http://138.68.2.13:8084/$1"
+      "destination": "http://138.68.2.13:8084/api/comprobantes/$1"
+    },
+
+    {
+      "source": "/api/reportes",
+      "destination": "http://138.68.2.13:8085/api/reportes"
     },
     {
       "source": "/api/reportes/(.*)",
-      "destination": "http://138.68.2.13:8085/$1"
+      "destination": "http://138.68.2.13:8085/api/reportes/$1"
     },
 
     {
