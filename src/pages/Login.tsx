@@ -20,24 +20,16 @@ const Login = () => {
       return;
     }
 
-    try {
-      // Hacemos POST directo a la URL de autenticación
-      const response = await axios.post(import.meta.env.VITE_AUTH_URL, {
-        username,
-        password,
-      });
-
-      const { token, username: user, roles } = response.data;
-
-      // Guardar datos en localStorage
-      localStorage.setItem('token', token);
-      localStorage.setItem('username', user);
-      localStorage.setItem('roles', JSON.stringify(roles));
+    // Autenticación hardcodeada temporalmente
+    if (username === 'admin' && password === '12345') {
+      // Guardar datos ficticios en localStorage
+      localStorage.setItem('token', 'dummy-token');
+      localStorage.setItem('username', 'admin');
+      localStorage.setItem('roles', JSON.stringify(['ADMIN']));
 
       // Redirigir al dashboard
       navigate('/dashboard');
-    } catch (err) {
-      console.error(err);
+    } else {
       setError('Usuario o contraseña incorrectos');
     }
   };
