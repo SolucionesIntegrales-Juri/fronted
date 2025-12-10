@@ -19,9 +19,9 @@ const Login = () => {
       return;
     }
 
-    // Autenticación hardcodeada temporalmente
+    // Simulación de login (Hardcoded)
     if (username === 'admin' && password === '12345') {
-      // Guardar datos ficticios en localStorage
+      // Guardar datos simulados en localStorage
       localStorage.setItem('token', 'dummy-token');
       localStorage.setItem('username', 'admin');
       localStorage.setItem('roles', JSON.stringify(['ADMIN']));
