@@ -1,74 +1,42 @@
 {
   "rewrites": [
+    {
+      "source": "/api/security/(.*)",
+      "destination": "http://138.68.2.13:9100/$1"
+    },
+    {
+      "source": "/api/clientes/(.*)",
+      "destination": "http://138.68.2.13:8082/$1"
+    },
+    {
+      "source": "/api/vehiculos/(.*)",
+      "destination": "http://138.68.2.13:8083/$1"
+    },
+    {
+      "source": "/api/modelos/(.*)",
+      "destination": "http://138.68.2.13:8083/$1"
+    },
+    {
+      "source": "/api/marcas/(.*)",
+      "destination": "http://138.68.2.13:8083/$1"
+    },
+    {
+      "source": "/api/tipos-vehiculo/(.*)",
+      "destination": "http://138.68.2.13:8083/$1"
+    },
+    {
+      "source": "/api/contratos/(.*)",
+      "destination": "http://138.68.2.13:8084/$1"
+    },
+    {
+      "source": "/api/comprobantes/(.*)",
+      "destination": "http://138.68.2.13:8084/$1"
+    },
+    {
+      "source": "/api/reportes/(.*)",
+      "destination": "http://138.68.2.13:8085/$1"
+    },
 
-    {
-      "source": "/api/security",
-      "destination": "http://138.68.2.13:9100"
-    },
-    {
-      "source": "/api/clientes",
-      "destination": "http://138.68.2.13:8082"
-    },
-    {
-      "source": "/api/clientes",
-      "destination": "http://138.68.2.13:8082"
-    },
-    {
-      "source": "/api/vehiculos",
-      "destination": "http://138.68.2.13:8083"
-    },
-    {
-      "source": "/api/vehiculos",
-      "destination": "http://138.68.2.13:8083"
-    },
-    {
-      "source": "/api/modelos",
-      "destination": "http://138.68.2.13:8083"
-    },
-    {
-      "source": "/api/modelos",
-      "destination": "http://138.68.2.13:8083"
-    },
-    {
-      "source": "/api/marcas",
-      "destination": "http://138.68.2.13:8083"
-    },
-    {
-      "source": "/api/marcas",
-      "destination": "http://138.68.2.13:8083"
-    },
-    {
-      "source": "/api/tipos-vehiculo",
-      "destination": "http://138.68.2.13:8083"
-    },
-    {
-      "source": "/api/tipos-vehiculo",
-      "destination": "http://138.68.2.13:8083"
-    },
-    {
-      "source": "/api/contratos",
-      "destination": "http://138.68.2.13:8084"
-    },
-    {
-      "source": "/api/contratos",
-      "destination": "http://138.68.2.13:8084"
-    },
-    {
-      "source": "/api/comprobantes",
-      "destination": "http://138.68.2.13:8084"
-    },
-    {
-      "source": "/api/comprobantes",
-      "destination": "http://138.68.2.13:8084"
-    },
-    {
-      "source": "/api/reportes",
-      "destination": "http://138.68.2.13:8085"
-    },
-    {
-      "source": "/api/reportes",
-      "destination": "http://138.68.2.13:8085"
-    },
     {
       "source": "/(.*)",
       "destination": "/index.html"
