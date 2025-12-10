@@ -1,76 +1,73 @@
 {
   "rewrites": [
+
     {
       "source": "/api/security",
-      "destination": "http://138.68.2.13:9100/api/security"
-    },
-    {
-      "source": "/api/security/:path+",
-      "destination": "http://138.68.2.13:9100/api/security/:path+"
+      "destination": "http://138.68.2.13:9100"
     },
     {
       "source": "/api/clientes",
-      "destination": "http://138.68.2.13:8082/api/clientes"
+      "destination": "http://138.68.2.13:8082"
     },
     {
-      "source": "/api/clientes/:path+",
-      "destination": "http://138.68.2.13:8082/api/clientes/:path+"
+      "source": "/api/clientes",
+      "destination": "http://138.68.2.13:8082"
     },
     {
       "source": "/api/vehiculos",
-      "destination": "http://138.68.2.13:8083/api/vehiculos"
+      "destination": "http://138.68.2.13:8083"
     },
     {
-      "source": "/api/vehiculos/:path+",
-      "destination": "http://138.68.2.13:8083/api/vehiculos/:path+"
+      "source": "/api/vehiculos",
+      "destination": "http://138.68.2.13:8083"
     },
     {
       "source": "/api/modelos",
-      "destination": "http://138.68.2.13:8083/api/modelos"
+      "destination": "http://138.68.2.13:8083"
     },
     {
-      "source": "/api/modelos/:path+",
-      "destination": "http://138.68.2.13:8083/api/modelos/:path+"
+      "source": "/api/modelos",
+      "destination": "http://138.68.2.13:8083"
     },
     {
       "source": "/api/marcas",
-      "destination": "http://138.68.2.13:8083/api/marcas"
+      "destination": "http://138.68.2.13:8083"
     },
     {
-      "source": "/api/marcas/:path+",
-      "destination": "http://138.68.2.13:8083/api/marcas/:path+"
+      "source": "/api/marcas",
+      "destination": "http://138.68.2.13:8083"
     },
     {
       "source": "/api/tipos-vehiculo",
-      "destination": "http://138.68.2.13:8083/api/tipos-vehiculo"
+      "destination": "http://138.68.2.13:8083"
     },
     {
-      "source": "/api/tipos-vehiculo/:path+",
-      "destination": "http://138.68.2.13:8083/api/tipos-vehiculo/:path+"
+      "source": "/api/tipos-vehiculo",
+      "destination": "http://138.68.2.13:8083"
     },
     {
       "source": "/api/contratos",
-      "destination": "http://138.68.2.13:8084/api/contratos"
+      "destination": "http://138.68.2.13:8084"
     },
     {
-      "source": "/api/contratos/:path+",
-      "destination": "http://138.68.2.13:8084/api/contratos/:path+"
+      "source": "/api/contratos",
+      "destination": "http://138.68.2.13:8084"
     },
     {
       "source": "/api/comprobantes",
-      "destination": "http://138.68.2.13:8084/api/comprobantes"
+      "destination": "http://138.68.2.13:8084"
     },
     {
-      "source": "/api/comprobantes/:path+",
-      "destination": "http://138.68.2.13:8084/api/comprobantes/:path+"
+      "source": "/api/comprobantes",
+      "destination": "http://138.68.2.13:8084"
     },
     {
       "source": "/api/reportes",
-      "destination": "http://138.68.2.13:8085/api/reportes"
+      "destination": "http://138.68.2.13:8085"
     },
     {
-      "source": "/api/reportes/:path+",
-      "destination": "http://138.68.2.13:8085/api/reportes/:path+"
+      "source": "/api/reportes",
+      "destination": "http://138.68.2.13:8085"
     },
     {
       "source": "/(.*)",

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-
 import { useNavigate } from 'react-router-dom';
 import '../styles/Login.css';
 import companyGif from '../assets/login.gif';
