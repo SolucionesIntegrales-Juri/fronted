@@ -6,6 +6,22 @@
     },
 
     {
+      "source": "/api/clientes/naturales",
+      "destination": "http://138.68.2.13:8082/api/clientes/naturales"
+    },
+    {
+      "source": "/api/clientes/empresas",
+      "destination": "http://138.68.2.13:8082/api/clientes/empresas"
+    },
+    {
+      "source": "/api/clientes/activos",
+      "destination": "http://138.68.2.13:8082/api/clientes/activos"
+    },
+    {
+      "source": "/api/clientes/inactivos",
+      "destination": "http://138.68.2.13:8082/api/clientes/inactivos"
+    },
+    {
       "source": "/api/clientes",
       "destination": "http://138.68.2.13:8082/api/clientes"
     },
@@ -14,6 +30,14 @@
       "destination": "http://138.68.2.13:8082/api/clientes/$1"
     },
 
+    {
+      "source": "/api/vehiculos/disponibles",
+      "destination": "http://138.68.2.13:8083/api/vehiculos/disponibles"
+    },
+    {
+      "source": "/api/vehiculos/para-reportes",
+      "destination": "http://138.68.2.13:8083/api/vehiculos/para-reportes"
+    },
     {
       "source": "/api/vehiculos",
       "destination": "http://138.68.2.13:8083/api/vehiculos"

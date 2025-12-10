@@ -114,10 +114,10 @@ class VehiculoService {
     return res.data;
   }
 
-  /** PATCH|PUT /api/vehiculos/{id}/estado/{estado} (o body) */
+  /** PATCH|PUT /api/vehiculos/{id}/estado */
   async actualizarEstado(id: string, estado: EstadoVehiculo): Promise<Vehiculo> {
-    // Intentamos una ruta común con path param; si tu backend usa body, ajusta aquí
-    const res = await api.put(`${BASE_PATH}/${id}/estado/${estado}`);
+    // Corregido: El backend espera un body con { estado: "..." }
+    const res = await api.put(`${BASE_PATH}/${id}/estado`, { estado });
     return res.data;
   }
 

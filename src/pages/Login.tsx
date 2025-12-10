@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import '../styles/Login.css';
 import companyGif from '../assets/login.gif';
@@ -19,16 +20,24 @@ const Login = () => {
       return;
     }
 
-    // Simulación de login (Hardcoded)
-    if (username === 'admin' && password === '12345') {
-      // Guardar datos simulados en localStorage
-      localStorage.setItem('token', 'dummy-token');
-      localStorage.setItem('username', 'admin');
-      localStorage.setItem('roles', JSON.stringify(['ADMIN']));
+    try {
+      // Hacemos POST directo a la URL de autenticación
+      const response = await axios.post(import.meta.env.VITE_AUTH_URL, {
+        username,
+        password,
+      });
+
+      const { token, username: user, roles } = response.data;
+
+      // Guardar datos en localStorage
+      localStorage.setItem('token', token);
+      localStorage.setItem('username', user);
+      localStorage.setItem('roles', JSON.stringify(roles));
 
       // Redirigir al dashboard
       navigate('/dashboard');
-    } else {
+    } catch (err) {
+      console.error(err);
       setError('Usuario o contraseña incorrectos');
     }
   };
