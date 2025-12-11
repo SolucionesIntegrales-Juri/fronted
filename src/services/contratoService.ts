@@ -1,7 +1,8 @@
 import api from '../api';
 import type { ContratoRequestDto, ContratoResponseDto } from '../types/contract';
 
-const BASE_PATH = '/contratos';
+// Usamos rutas relativas para que api.ts (baseURL '/api') resuelva adecuadamente en cualquier entorno.
+const BASE_PATH = 'contratos';
 
 class ContratoService {
   /** GET /api/contratos */

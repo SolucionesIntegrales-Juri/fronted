@@ -11,10 +11,11 @@ import type {
   TipoVehiculo
 } from '../types/vehicle';
 
-const BASE_PATH = '/vehiculos';
-// Derivar raíz del microservicio para otros catálogos (modelos, tipos)
-// Asumiendo que api.ts ya tiene la baseURL configurada, usamos rutas relativas
-const ROOT_PATH = ''; 
+// Usamos rutas relativas para que la baseURL configurable (por ejemplo '/api') funcione en cualquier entorno.
+const BASE_PATH = 'vehiculos';
+const MODELOS_PATH = 'modelos';
+const MARCAS_PATH = 'marcas';
+const TIPOS_PATH = 'tipos-vehiculo';
 
 /**
  * Servicio para consumir el API REST del microservicio de Vehículos
@@ -129,19 +130,19 @@ class VehiculoService {
 
   /** GET /api/modelos - listado de modelos con su marca */
   async listarModelos(): Promise<Modelo[]> {
-    const res = await api.get(`${ROOT_PATH}/modelos`);
+    const res = await api.get(MODELOS_PATH);
     return res.data;
   }
 
   /** GET /api/marcas - listado de marcas */
   async listarMarcas(): Promise<Marca[]> {
-    const res = await api.get(`${ROOT_PATH}/marcas`);
+    const res = await api.get(MARCAS_PATH);
     return res.data;
   }
 
   /** GET /api/tipos-vehiculo - listado de tipos de vehículo */
   async listarTiposVehiculo(): Promise<TipoVehiculo[]> {
-    const res = await api.get(`${ROOT_PATH}/tipos-vehiculo`);
+    const res = await api.get(TIPOS_PATH);
     return res.data;
   }
 }
