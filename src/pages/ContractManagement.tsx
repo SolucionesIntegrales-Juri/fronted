@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import ContractCard from '../components/ContractCard';
 import ContractDetailsModal from '../components/ContractDetailsModal';
@@ -35,6 +35,21 @@ const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, con
 
   const location = useLocation();
 
+  const loadContracts = useCallback(async (loader?: () => Promise<ContratoResponseDto[]>) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await (loader ? loader() : contratoService.findAll());
+      setItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Error al obtener contratos';
+      setError(errorMsg);
+      console.error('Error cargando contratos:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Si nos pasan contratos por props, sincronizamos una sola vez o cuando cambie realmente el array
   useEffect(() => {
     if (Array.isArray(contracts)) setItems(contracts);
@@ -44,31 +59,14 @@ const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, con
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await contratoService.findAll();
-        if (!cancelled) {
-          setItems(Array.isArray(data) ? data : []);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          const errorMsg = err instanceof Error ? err.message : 'Error desconocido al cargar contratos';
-          setError(errorMsg);
-          console.error('Error cargando contratos:', err);
-          // Mantener los contratos existentes en caso de error
-          // No limpiar items para que se mantengan los datos previos
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      if (cancelled) return;
+      await loadContracts();
     };
-    // Solo cargar si no hay props de contratos
     if (!contracts || contracts.length === 0) {
       load();
     }
     return () => { cancelled = true; };
-  }, [contracts, location.key]);
+  }, [contracts, location.key, loadContracts]);
 
   // Cálculo de estadísticas dinámicas según contratos recibidos
   const stats: ContractStats = useMemo(() => {
@@ -170,12 +168,30 @@ const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, con
   
   const handleEdit = (contract: ContratoResponseDto) => onStartEditContract?.(contract);
 
-  const handleFilters = () => {
-    console.log('Abrir filtros');
+  const handleFilterByClient = async () => {
+    const clienteId = window.prompt('ID del cliente para filtrar contratos');
+    if (!clienteId) return;
+    await loadContracts(() => contratoService.listarPorCliente(clienteId.trim()));
   };
 
-  const handleStateFilter = () => {
-    console.log('Filtrar por estado');
+  const handleFilterByVehicle = async () => {
+    const vehiculoId = window.prompt('ID del vehículo para filtrar contratos');
+    if (!vehiculoId) return;
+    await loadContracts(() => contratoService.listarPorVehiculo(vehiculoId.trim()));
+  };
+
+  const handleFilterByState = async () => {
+    const estado = window.prompt('Estado (ej. ACTIVO, FINALIZADO, CANCELADO)');
+    if (!estado) return;
+    await loadContracts(() => contratoService.listarPorEstado(estado.trim()));
+  };
+
+  const handleFilterByDates = async () => {
+    const fechaInicio = window.prompt('Fecha inicio (YYYY-MM-DD)');
+    if (!fechaInicio) return;
+    const fechaFin = window.prompt('Fecha fin (YYYY-MM-DD)');
+    if (!fechaFin) return;
+    await loadContracts(() => contratoService.listarPorRangoFechas(fechaInicio.trim(), fechaFin.trim()));
   };
 
   return (
@@ -267,28 +283,11 @@ const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, con
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <button className="btn-filters" onClick={handleFilters}>
-            Filtros
-          </button>
-          <button className="btn-filters" onClick={handleStateFilter}>
-            Estado
-          </button>
-          <button className="btn-filters" onClick={async () => {
-            try {
-              setLoading(true);
-              setError(null);
-              const data = await contratoService.findAll();
-              setItems(Array.isArray(data) ? data : []);
-            } catch (err) {
-              const errorMsg = err instanceof Error ? err.message : 'Error al recargar contratos';
-              setError(errorMsg);
-              console.error('Error recargando contratos:', err);
-            } finally {
-              setLoading(false);
-            }
-          }}>
-            Refrescar
-          </button>
+          <button className="btn-filters" onClick={handleFilterByClient}>Cliente</button>
+          <button className="btn-filters" onClick={handleFilterByVehicle}>Vehículo</button>
+          <button className="btn-filters" onClick={handleFilterByState}>Estado</button>
+          <button className="btn-filters" onClick={handleFilterByDates}>Fechas</button>
+          <button className="btn-filters" onClick={() => loadContracts()}>Refrescar</button>
         </div>
 
         {loading && <div className="no-results"><p>Cargando contratos…</p></div>}
@@ -298,20 +297,7 @@ const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, con
             <button 
               className="btn-primary" 
               style={{ marginTop: '1rem' }}
-              onClick={async () => {
-                try {
-                  setLoading(true);
-                  setError(null);
-                  const data = await contratoService.findAll();
-                  setItems(Array.isArray(data) ? data : []);
-                } catch (err) {
-                  const errorMsg = err instanceof Error ? err.message : 'Error al recargar contratos';
-                  setError(errorMsg);
-                  console.error('Error recargando contratos:', err);
-                } finally {
-                  setLoading(false);
-                }
-              }}
+              onClick={() => loadContracts()}
             >
               Reintentar
             </button>
