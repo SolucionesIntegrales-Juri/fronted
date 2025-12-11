@@ -5,32 +5,48 @@ import type { ContratoRequestDto, ContratoResponseDto } from '../types/contract'
 const BASE_PATH = 'contratos';
 
 class ContratoService {
+  private extractList(data: unknown): ContratoResponseDto[] {
+    if (Array.isArray(data)) return data as ContratoResponseDto[];
+    if (data && typeof data === 'object') {
+      const obj = data as Record<string, unknown>;
+      const content = obj.content;
+      if (Array.isArray(content)) return content as ContratoResponseDto[];
+      const items = obj.items;
+      if (Array.isArray(items)) return items as ContratoResponseDto[];
+      const nestedData = obj.data;
+      if (Array.isArray(nestedData)) return nestedData as ContratoResponseDto[];
+    }
+    return [];
+  }
+
   /** GET /api/contratos */
   async findAll(): Promise<ContratoResponseDto[]> {
     const res = await api.get(BASE_PATH);
-    const data = res.data;
-    
-    // Aceptar varias formas de respuesta: arreglo directo o envuelto (Spring Page u otros)
-    type Page<T> = { content: T[] };
-    type Items<T> = { items: T[] };
-    type DataWrap<T> = { data: T[] };
-    const d = data as ContratoResponseDto[] | Page<ContratoResponseDto> | Items<ContratoResponseDto> | DataWrap<ContratoResponseDto> | unknown;
-    
-    if (Array.isArray(d)) return d;
-    if (d && typeof d === 'object') {
-      const obj = d as Record<string, unknown>;
-      if (Array.isArray((obj as Page<ContratoResponseDto>).content)) return (obj as Page<ContratoResponseDto>).content;
-      if (Array.isArray((obj as Items<ContratoResponseDto>).items)) return (obj as Items<ContratoResponseDto>).items;
-      if (Array.isArray((obj as DataWrap<ContratoResponseDto>).data)) return (obj as DataWrap<ContratoResponseDto>).data;
-    }
-    // Si no es un arreglo reconocible, retornamos vacío para no romper la UI
-    return [];
+    return this.extractList(res.data);
   }
 
   /** GET /api/contratos/{id} */
   async findById(id: string): Promise<ContratoResponseDto> {
     const res = await api.get(`${BASE_PATH}/${id}`);
     return res.data;
+  }
+
+  /** GET /api/contratos/cliente/{clienteId} */
+  async listarPorCliente(clienteId: string): Promise<ContratoResponseDto[]> {
+    const res = await api.get(`${BASE_PATH}/cliente/${clienteId}`);
+    return this.extractList(res.data);
+  }
+
+  /** GET /api/contratos/vehiculo/{vehiculoId} */
+  async listarPorVehiculo(vehiculoId: string): Promise<ContratoResponseDto[]> {
+    const res = await api.get(`${BASE_PATH}/vehiculo/${vehiculoId}`);
+    return this.extractList(res.data);
+  }
+
+  /** GET /api/contratos/estado/{estado} */
+  async listarPorEstado(estado: string): Promise<ContratoResponseDto[]> {
+    const res = await api.get(`${BASE_PATH}/estado/${estado}`);
+    return this.extractList(res.data);
   }
 
   /** POST /api/contratos */
@@ -65,7 +81,7 @@ class ContratoService {
   /** POST /api/contratos/rango-fechas */
   async listarPorRangoFechas(fechaInicio: string, fechaFin: string): Promise<ContratoResponseDto[]> {
     const res = await api.post(`${BASE_PATH}/rango-fechas`, { fechaInicio, fechaFin });
-    return res.data;
+    return this.extractList(res.data);
   }
 }
 
