@@ -63,6 +63,7 @@ const ContractManagement: React.FC<ContractManagementProps> = ({ onNavigate, con
         if (!cancelled) setLoading(false);
       }
     };
+    // Solo cargar si no hay props de contratos
     if (!contracts || contracts.length === 0) {
       load();
     }
