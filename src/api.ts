@@ -1,8 +1,10 @@
 import axios from 'axios';
 
-// Crear instancia de Axios con la URL base del API Gateway
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
-});
+const rawBaseUrl = import.meta.env.VITE_API_URL;
+const baseURL = (typeof rawBaseUrl === 'string' && rawBaseUrl.trim().length > 0)
+  ? rawBaseUrl.trim()
+  : '/api';
+
+const api = axios.create({ baseURL });
 
 export default api;

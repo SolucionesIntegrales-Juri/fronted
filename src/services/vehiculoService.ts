@@ -12,10 +12,10 @@ import type {
 } from '../types/vehicle';
 
 // Usamos rutas relativas para que la baseURL configurable (por ejemplo '/api') funcione en cualquier entorno.
-const BASE_PATH = 'vehiculos';
-const MODELOS_PATH = 'modelos';
-const MARCAS_PATH = 'marcas';
-const TIPOS_PATH = 'tipos-vehiculo';
+const BASE_PATH = '/vehiculos';
+const MODELOS_PATH = '/modelos';
+const MARCAS_PATH = '/marcas';
+const TIPOS_PATH = '/tipos-vehiculo';
 
 /**
  * Servicio para consumir el API REST del microservicio de Vehículos
